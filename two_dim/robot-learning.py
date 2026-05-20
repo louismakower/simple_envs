@@ -8,10 +8,10 @@ import numpy as np
 import pygame
 
 # Imports from this project
-from environment import Environment
-from robot import Robot
-from graphics import Graphics
-import config
+from two_dim.environment import Environment
+from two_dim.robot import Robot
+from two_dim.graphics import Graphics
+import two_dim.config as config
 
 
 # Set the numpy random seed

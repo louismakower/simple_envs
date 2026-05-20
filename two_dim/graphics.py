@@ -6,8 +6,8 @@
 import pygame
 
 # Imports from this project
-import constants
-import config
+import two_dim.constants as constants
+import two_dim.config as config
 
 
 # The Graphics class performs all the pygame drawing

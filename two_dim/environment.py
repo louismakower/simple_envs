@@ -6,8 +6,8 @@
 import numpy as np
 
 # Imports from this project
-import constants
-import config
+import two_dim.constants as constants
+import two_dim.config as config
 
 
 # The environment class defines where the robot starts, where the goal is, and where the obstacle is.
