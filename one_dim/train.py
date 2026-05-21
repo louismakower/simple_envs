@@ -15,9 +15,9 @@ from one_dim import agents
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num-envs", type=int, default=1)
+    parser.add_argument("--num_envs", type=int, default=1)
     parser.add_argument("--agent", type=str, required=True)
-    parser.add_argument("--max-episode-length", type=int, default=200)
+    parser.add_argument("--max-episode-length", type=int, default=50)
     parser.add_argument("--log-dir", type=str, default="runs")
     parser.add_argument(
             "--headless",

@@ -15,14 +15,17 @@ class Environment:
     # Initialisation of a new environment
     def __init__(self):
         # Initial state
-        self.init_state = np.array([0.2])
+        self.init_state = np.random.random((1,))
         # Goal state
-        self.goal_state = np.array([0.9])
+        self.goal_state = np.random.random((1,))
         # Set the current state to the initial state
         self.state = self.init_state
 
     # Reset the environment, i.e. set the state to the initial state
     def reset(self):
+        self.init_state = np.random.random((1,))
+        # Goal state
+        self.goal_state = np.random.random((1,))
         self.state = self.init_state
 
     # Step the environment by executing one action
@@ -33,6 +36,7 @@ class Environment:
 
     # The environment dynamics, i.e. the transition function
     def dynamics(self, state, action):
+        action *= constants.MAX_ACTION_MAGNITUDE
         # First, clip the action in each dimension
         action = np.clip(action, -constants.MAX_ACTION_MAGNITUDE, constants.MAX_ACTION_MAGNITUDE)
         # The dynamics is a simple sum
@@ -64,8 +68,6 @@ class OneDimVecEnv:
         self._device = torch.device(device)
         self._envs = [Environment() for _ in range(num_envs)]
         self._step_counts = torch.zeros(num_envs, dtype=torch.long, device=self._device)
-        goals = np.stack([e.goal_state for e in self._envs])  # (N, 1)
-        self._goal = torch.tensor(goals, dtype=torch.float32, device=self._device)
         self.headless = headless
         self._graphics = Graphics() if not headless else None
 
@@ -93,18 +95,30 @@ class OneDimVecEnv:
         }
 
     def compute_reward(self, state: torch.Tensor, goal: torch.Tensor) -> torch.Tensor:
-        return -torch.abs(state - goal).squeeze(-1)
+        return (torch.abs(state - goal).squeeze(-1) < constants.GOAL_RADIUS).float()
 
     def is_terminal(self, state: torch.Tensor, goal: torch.Tensor) -> torch.Tensor:
         return torch.abs(state - goal).squeeze(-1) < constants.GOAL_RADIUS
+    
+    def is_timeout(self):
+        return self._step_counts >= self._max_episode_length
+
+    
+    @property
+    def _goal(self) -> torch.Tensor:
+        goals = np.stack([e.goal_state for e in self._envs])  # (N, 1)
+        return torch.tensor(goals, dtype=torch.float32, device=self._device)
+    
+    @property
+    def _state_t(self) -> torch.Tensor:
+        states = np.stack([e.state for e in self._envs])  # (N, 1)
+        return torch.tensor(states, dtype=torch.float32, device=self._device)
 
     def _get_obs(self) -> dict:
-        states = np.stack([e.state for e in self._envs])  # (N, 1)
-        state_t = torch.tensor(states, dtype=torch.float32, device=self._device)
         return {
-            "policy": state_t,
+            "policy": self._state_t,
             "goal": {"desired_goal": self._goal},
-            "her": {"achieved_goal": state_t},
+            "her": {"achieved_goal": self._state_t},
         }
 
     def reset(self) -> tuple[dict, dict]:
@@ -125,7 +139,7 @@ class OneDimVecEnv:
 
         rew = self.compute_reward(state, goal)
         term = self.is_terminal(state, goal)
-        timeout = self._step_counts >= self._max_episode_length
+        timeout = self.is_timeout()
 
         nan = float("nan")
         terminal_obs = {
