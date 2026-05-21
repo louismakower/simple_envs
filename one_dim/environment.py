@@ -6,6 +6,7 @@ import torch
 import one_dim.constants as constants
 import one_dim.config as config
 from louis_rl.vec_env import SpaceInfo
+from .graphics import Graphics
 
 
 # The environment class defines where the robot starts, where the goal is, and where the obstacle is.
@@ -38,7 +39,7 @@ class Environment:
         next_state = state + action
         # Check if the robot is past the boundary
         intersection = self.intersects_perimeter(state, next_state)
-        if intersection:
+        if intersection is not None:
             # If there is an intersection, set the state to just before the point of intersection
             direction = (state - next_state) / np.linalg.norm(state - next_state)
             next_state = intersection + 0.0001 * direction
@@ -50,14 +51,14 @@ class Environment:
     # Returns None if the segment doesn’t hit the square’s perimeter
 	# Otherwise returns the intersection point
     def intersects_perimeter(self, x1, x2):
-        if x2 < -1.0:
-            return -1.0
-        elif x2 > 1.0:
-            return 1.0
+        if x2 < constants.ENV_BOUNDS[0]:
+            return constants.ENV_BOUNDS[0]
+        elif x2 > constants.ENV_BOUNDS[1]:
+            return constants.ENV_BOUNDS[1]
 
 
 class OneDimVecEnv:
-    def __init__(self, num_envs: int, max_episode_length: int, device: str = "cpu"):
+    def __init__(self, num_envs: int, max_episode_length: int, device: str = "cpu", headless=False):
         self._num_envs = num_envs
         self._max_episode_length = max_episode_length
         self._device = torch.device(device)
@@ -65,6 +66,8 @@ class OneDimVecEnv:
         self._step_counts = torch.zeros(num_envs, dtype=torch.long, device=self._device)
         goals = np.stack([e.goal_state for e in self._envs])  # (N, 1)
         self._goal = torch.tensor(goals, dtype=torch.float32, device=self._device)
+        self.headless = headless
+        self._graphics = Graphics() if not headless else None
 
     @property
     def device(self) -> torch.device:
@@ -140,5 +143,8 @@ class OneDimVecEnv:
                 if resetted[i]:
                     self._envs[i].reset()
                     self._step_counts[i] = 0
+        
+        if not self.headless:
+            self._graphics.draw(self._envs[0], visualisations=[])
 
         return self._get_obs(), rew, term, timeout, {"terminal_obs": terminal_obs}

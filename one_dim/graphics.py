@@ -11,6 +11,7 @@ class Graphics:
 
     # Initialisation of new graphics
     def __init__(self):
+        pygame.init()
         track_height = config.WINDOW_SIZE // 4
         # Screen dimensions
         self.screen = pygame.display.set_mode((2 * config.WINDOW_SIZE + constants.WINDOW_MARGIN, track_height + constants.WINDOW_HEADER))
@@ -86,7 +87,8 @@ class Graphics:
     # Function to covert a position in world/environment space, to a position in pixels on the window
     def world_pos_to_window_pos(self, world_pos):
         track_height = config.WINDOW_SIZE // 4
-        x = int(config.WINDOW_SIZE * world_pos[0])
+        lo, hi = constants.ENV_BOUNDS
+        x = int(config.WINDOW_SIZE * (world_pos[0] - lo) / (hi - lo))
         y = track_height // 2
         return x, y
 
