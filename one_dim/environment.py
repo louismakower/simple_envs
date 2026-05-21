@@ -77,8 +77,9 @@ class OneDimVecEnv:
         self._step_counts = torch.zeros(num_envs, dtype=torch.long, device=self._device)
         self.headless = headless
         self._graphics = Graphics() if not headless else None
-        # Optional live policy visualiser, attached by the training script.
-        self._visualiser = None
+        # Optional live visualisers (policy, value, ...), attached by the
+        # training script. Each must expose a `maybe_update()` method.
+        self._visualisers = []
 
     @property
     def device(self) -> torch.device:
@@ -169,6 +170,6 @@ class OneDimVecEnv:
         
         if not self.headless:
             self._graphics.draw(self._envs[0], visualisations=[])
-        if self._visualiser is not None:
-            self._visualiser.maybe_update()
+        for visualiser in self._visualisers:
+            visualiser.maybe_update()
         return self._get_obs(), rew, term, timeout, {"terminal_obs": terminal_obs}

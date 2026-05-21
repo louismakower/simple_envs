@@ -45,11 +45,14 @@ def main():
 
     runner = RLRunner(env=env, cfg=agent_cfg, log_dir=log_dir, writer=writer)
 
-    # Attach a live matplotlib visualiser of the policy over the (state, goal)
-    # unit square. Works for both SAC and PPO; skipped when the display is off.
+    # Attach live matplotlib visualisers over the (state, goal) unit square.
+    # The policy heatmap works for both SAC and PPO; the value heatmap needs a
+    # critic, so it is SAC-only. Both are skipped when the display is off.
     if not args.headless:
-        from one_dim.visualise import Visualiser
-        env._visualiser = Visualiser(runner, env)
+        from one_dim.visualise import Visualiser, ValueVisualiser
+        env._visualisers.append(Visualiser(runner, env))
+        if args.agent == "sac":
+            env._visualisers.append(ValueVisualiser(runner, env))
 
     runner.learn()
     writer.close()
