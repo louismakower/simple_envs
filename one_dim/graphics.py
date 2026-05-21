@@ -25,6 +25,7 @@ class Graphics:
 
     # Function to draw the environment, and any visualisations, on the window
     def draw(self, environment, visualisations):
+        pygame.event.pump()
         # Clear the screen
         self.screen.fill((0, 0, 0))
         # Draw the text along the top
