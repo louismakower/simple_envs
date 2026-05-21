@@ -128,7 +128,7 @@ class OneDimVecEnv:
         return {
             "policy": self._state_t,
             "goal": {"desired_goal": self._goal},
-            "her": {"achieved_goal": self._state_t},
+            "her": {"position": self._state_t},
         }
 
     def reset(self) -> tuple[dict, dict]:
@@ -155,14 +155,14 @@ class OneDimVecEnv:
         terminal_obs = {
             "policy": torch.full((self._num_envs, 1), nan, device=self._device),
             "goal": {"desired_goal": torch.full((self._num_envs, 1), nan, device=self._device)},
-            "her": {"achieved_goal": torch.full((self._num_envs, 1), nan, device=self._device)},
+            "her": {"position": torch.full((self._num_envs, 1), nan, device=self._device)},
         }
 
         resetted = term | timeout
         if resetted.any():
             terminal_obs["policy"][resetted] = state[resetted].clone()
             terminal_obs["goal"]["desired_goal"][resetted] = goal[resetted].clone()
-            terminal_obs["her"]["achieved_goal"][resetted] = state[resetted].clone()
+            terminal_obs["her"]["position"][resetted] = state[resetted].clone()
             for i in range(self._num_envs):
                 if resetted[i]:
                     self._envs[i].reset()

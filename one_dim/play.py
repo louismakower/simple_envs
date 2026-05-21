@@ -8,6 +8,7 @@ import torch
 from louis_rl.algorithm import RLRunner
 from louis_rl.ppo import PPORunnerCfg
 from louis_rl.sac import SACRunnerCfg
+from one_dim.agents.her_cfg import OneDimHERCfg
 from one_dim.environment import OneDimVecEnv
 from one_dim.graphics import Graphics
 
@@ -27,6 +28,10 @@ def main():
     if algo_name == "ppo":
         cfg = PPORunnerCfg(**cfg_dict)
     elif algo_name == "sac":
+        # asdict() flattened the nested OneDimHERCfg into a plain dict; rehydrate it.
+        her_cfg = cfg_dict.get("her_cfg")
+        if isinstance(her_cfg, dict):
+            cfg_dict["her_cfg"] = OneDimHERCfg(**her_cfg)
         cfg = SACRunnerCfg(**cfg_dict)
     else:
         raise ValueError(f"Unknown algo_name in cfg: {algo_name}")
