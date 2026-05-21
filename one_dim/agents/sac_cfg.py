@@ -1,15 +1,16 @@
 from louis_rl.sac import SACRunnerCfg
+from one_dim.agents.her_cfg import OneDimHERCfg
 
 SAC_CFG = SACRunnerCfg(
     experiment_name = "sac_1d",
 
-    gamma = 0.97,
+    gamma = 0.99,
     alpha_init = 0.2,
     alpha_lr = 3e-4,
     target_entropy = "auto",
 
-    replay_buffer_size = 1_000_00,
-    warmup_transitions = 1_0000,
+    replay_buffer_size = 100_000,
+    warmup_transitions = 10_000,
 
     q_hidden_dims = [6, 6],
     q_learning_rate = 3e-4,
@@ -27,7 +28,7 @@ SAC_CFG = SACRunnerCfg(
 
     max_steps = 500_000,
     steps_per_iter = 1,
-    num_train_updates = 1,
+    num_train_updates = 10,
     batch_size = 256,
 
     save_interval = 600,

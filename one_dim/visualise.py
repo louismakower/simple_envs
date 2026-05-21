@@ -21,7 +21,7 @@ class Visualiser:
     # Resolution of the (state, goal) grid evaluated for the heatmap.
     HEATMAP_RES = 80
 
-    def __init__(self, runner, env, update_every: int = 200):
+    def __init__(self, runner, env, update_every: int = 1):
         # `runner` is the RLRunner; `env` is the OneDimVecEnv.
         self._runner = runner
         self._env = env

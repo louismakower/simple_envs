@@ -5,7 +5,9 @@ from pathlib import Path
 import pygame
 import torch
 
-from louis_rl.ppo import PPORunner, PPORunnerCfg
+from louis_rl.algorithm import RLRunner
+from louis_rl.ppo import PPORunnerCfg
+from louis_rl.sac import SACRunnerCfg
 from one_dim.environment import OneDimVecEnv
 from one_dim.graphics import Graphics
 
@@ -19,10 +21,18 @@ def main():
     checkpoint_path = Path(args.checkpoint)
     cfg_path = checkpoint_path.parent.parent / "cfg.json"
     with open(cfg_path) as f:
-        cfg = PPORunnerCfg(**json.load(f))
+        cfg_dict = json.load(f)
+
+    algo_name = cfg_dict.get("algo_name", "ppo").lower()
+    if algo_name == "ppo":
+        cfg = PPORunnerCfg(**cfg_dict)
+    elif algo_name == "sac":
+        cfg = SACRunnerCfg(**cfg_dict)
+    else:
+        raise ValueError(f"Unknown algo_name in cfg: {algo_name}")
 
     env = OneDimVecEnv(num_envs=1, max_episode_length=args.max_episode_length)
-    runner = PPORunner(env=env, cfg=cfg, log_dir="/tmp/play", writer=None)
+    runner = RLRunner(env=env, cfg=cfg, log_dir="/tmp/play", writer=None)
     runner.load_checkpoint(args.checkpoint)
 
     pygame.init()
