@@ -29,11 +29,11 @@ SAC_CFG = SACRunnerCfg(
     max_steps = 500_000,
     steps_per_iter = 1,
     num_train_updates = 10,
-    batch_size = 256,
+    batch_size = 512,
 
     save_interval = 600,
 
     collect_states = False,
 
-    # her_cfg = FrankaReachHerCfg(mode="future", success_threshold=0.03)
+    her_cfg = OneDimHERCfg(mode="future")
 )
