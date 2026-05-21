@@ -9,8 +9,8 @@ from torch.utils.tensorboard import SummaryWriter
 from louis_rl.ppo import PPORunnerCfg
 from louis_rl.sac import SACRunnerCfg
 from louis_rl.algorithm import RLRunner
-from .environment import OneDimVecEnv
-import agents
+from one_dim.environment import OneDimVecEnv
+from one_dim import agents
 
 
 def main():
