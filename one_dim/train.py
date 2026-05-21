@@ -10,14 +10,13 @@ from louis_rl.ppo import PPORunnerCfg
 from louis_rl.sac import SACRunnerCfg
 from louis_rl.algorithm import RLRunner
 from one_dim.environment import OneDimVecEnv
-from one_dim import agents
+from one_dim import agents, config
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_envs", type=int, default=1)
     parser.add_argument("--agent", type=str, required=True)
-    parser.add_argument("--max-episode-length", type=int, default=50)
     parser.add_argument("--log-dir", type=str, default="runs")
     parser.add_argument(
             "--headless",
@@ -28,7 +27,7 @@ def main():
     args = parser.parse_args()
 
 
-    env = OneDimVecEnv(num_envs=args.num_envs, max_episode_length=args.max_episode_length, headless=args.headless)
+    env = OneDimVecEnv(num_envs=args.num_envs, max_episode_length=config.EPISODE_LENGTH, headless=args.headless)
 
     if args.agent == "ppo":
         agent_cfg = agents.PPO_CFG
@@ -45,6 +44,13 @@ def main():
         json.dump(dataclasses.asdict(agent_cfg), f, indent=2)
 
     runner = RLRunner(env=env, cfg=agent_cfg, log_dir=log_dir, writer=writer)
+
+    # Attach a live matplotlib visualiser of the policy over the (state, goal)
+    # unit square. Works for both SAC and PPO; skipped when the display is off.
+    if not args.headless:
+        from one_dim.visualise import Visualiser
+        env._visualiser = Visualiser(runner, env)
+
     runner.learn()
     writer.close()
 

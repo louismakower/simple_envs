@@ -14,18 +14,25 @@ class Environment:
 
     # Initialisation of a new environment
     def __init__(self):
-        # Initial state
-        self.init_state = np.random.random((1,))
-        # Goal state
-        self.goal_state = np.random.random((1,))
+        if config.ENVIRONMENT_TYPE == "random":
+            # Initial state
+            self.init_state = np.random.random((1,))
+            # Goal state
+            self.goal_state = np.random.random((1,))
+        elif config.ENVIRONMENT_TYPE == "fixed":
+            # Initial state
+            self.init_state = np.array([0.9])
+            # Goal state
+            self.goal_state = np.array([0.2])
         # Set the current state to the initial state
         self.state = self.init_state
 
     # Reset the environment, i.e. set the state to the initial state
     def reset(self):
-        self.init_state = np.random.random((1,))
-        # Goal state
-        self.goal_state = np.random.random((1,))
+        if config.ENVIRONMENT_TYPE == "random":
+            self.init_state = np.random.random((1,))
+            # Goal state
+            self.goal_state = np.random.random((1,))
         self.state = self.init_state
 
     # Step the environment by executing one action
@@ -36,7 +43,7 @@ class Environment:
 
     # The environment dynamics, i.e. the transition function
     def dynamics(self, state, action):
-        action *= constants.MAX_ACTION_MAGNITUDE
+        action = action * constants.MAX_ACTION_MAGNITUDE
         # First, clip the action in each dimension
         action = np.clip(action, -constants.MAX_ACTION_MAGNITUDE, constants.MAX_ACTION_MAGNITUDE)
         # The dynamics is a simple sum
@@ -70,6 +77,8 @@ class OneDimVecEnv:
         self._step_counts = torch.zeros(num_envs, dtype=torch.long, device=self._device)
         self.headless = headless
         self._graphics = Graphics() if not headless else None
+        # Optional live policy visualiser, attached by the training script.
+        self._visualiser = None
 
     @property
     def device(self) -> torch.device:
@@ -160,5 +169,6 @@ class OneDimVecEnv:
         
         if not self.headless:
             self._graphics.draw(self._envs[0], visualisations=[])
-
+        if self._visualiser is not None:
+            self._visualiser.maybe_update()
         return self._get_obs(), rew, term, timeout, {"terminal_obs": terminal_obs}

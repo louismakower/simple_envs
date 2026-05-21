@@ -3,13 +3,13 @@ from louis_rl.sac import SACRunnerCfg
 SAC_CFG = SACRunnerCfg(
     experiment_name = "sac_1d",
 
-    gamma = 0.99,
+    gamma = 0.97,
     alpha_init = 0.2,
     alpha_lr = 3e-4,
     target_entropy = "auto",
 
-    replay_buffer_size = 10_000,
-    warmup_transitions = 1000,
+    replay_buffer_size = 1_000_00,
+    warmup_transitions = 1_0000,
 
     q_hidden_dims = [6, 6],
     q_learning_rate = 3e-4,
