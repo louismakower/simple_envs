@@ -45,6 +45,16 @@ def main():
 
     runner = RLRunner(env=env, cfg=agent_cfg, log_dir=log_dir, writer=writer)
 
+    # Attach live matplotlib visualisers over the 2D state space (one 2x2
+    # figure per visualiser, one subplot per fixed goal). The policy quiver
+    # works for both SAC and PPO; the value heatmap needs a critic, so it is
+    # SAC-only. These are independent of `--headless`, which only suppresses
+    # the pygame environment window.
+    from two_dim.visualise import Visualiser, ValueVisualiser
+    env._visualisers.append(Visualiser(runner, env))
+    if args.agent == "sac":
+        env._visualisers.append(ValueVisualiser(runner, env))
+
     runner.learn()
     writer.close()
 

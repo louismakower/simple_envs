@@ -132,6 +132,9 @@ class TwoDimVecEnv:
         self._step_counts = torch.zeros(num_envs, dtype=torch.long, device=self._device)
         self.headless = headless
         self._graphics = Graphics() if not headless else None
+        # Optional live visualisers (policy, value, ...), attached by the
+        # training script. Each must expose a `maybe_update()` method.
+        self._visualisers = []
 
     @property
     def device(self) -> torch.device:
@@ -224,4 +227,6 @@ class TwoDimVecEnv:
             # (on macOS the window stays blank/behind until events are pumped).
             pygame.event.pump()
             self._graphics.draw(self._envs[0], visualisations=[])
+        for visualiser in self._visualisers:
+            visualiser.maybe_update()
         return self._get_obs(), rew, term, timeout, {"terminal_obs": terminal_obs}
