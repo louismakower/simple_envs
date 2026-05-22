@@ -15,11 +15,6 @@ from louis_rl.her import HERCfg, build_hindsight_goals
 import one_dim.constants as constants
 
 
-def compute_reward(position, desired_goal, goal_radius):
-    """Sparse reward: 1.0 when achieved is within goal_radius of desired, else 0.0."""
-    return (torch.abs(position - desired_goal).squeeze(-1) < goal_radius).float()
-
-
 def replace_goal_obs(all_obs, goal_obs, policy_obs_dim):
     """Swap the goal slice of a concatenated [policy_obs | goal] observation."""
     without_goal = all_obs[:, :, :policy_obs_dim]
@@ -35,6 +30,7 @@ def get_her_goals(trajectories, extras):
     lengths = trajectories["lengths"]  # (N,) — valid steps per env
     valid = trajectories["valid"]  # (T * N,) bool
 
+    first_pos = her_obs["position"]  # (T, N, 1)
     next_pos = her_next_obs["position"]  # (T, N, 1)
 
     policy_obs_dim = extras["policy_obs_dim"]
@@ -46,8 +42,12 @@ def get_her_goals(trajectories, extras):
     obs = replace_goal_obs(obs, new_goals, policy_obs_dim)
     next_obs = replace_goal_obs(next_obs, new_goals, policy_obs_dim)
 
+    flat_first_pos = first_pos.view(-1, 1)
     flat_next_pos = next_pos.view(-1, 1)
     flat_goal = new_goals.view(-1, 1)
+
+    impossible_first_state = torch.abs(flat_first_pos  - flat_goal).squeeze(-1) < goal_radius
+    valid = valid & ~impossible_first_state
 
     distances = torch.abs(flat_next_pos - flat_goal).squeeze(-1)  # (T * N,)
     # Recompute reward and termination against the hindsight goal — the original
@@ -69,6 +69,7 @@ def get_her_goals(trajectories, extras):
 class OneDimHERCfg(HERCfg):
     mode: str = "future"
     goal_radius: float = constants.GOAL_RADIUS
+    k: int = 1
 
     def __post_init__(self):
         # Set by SACRunner after env construction; not a config field.

@@ -35,6 +35,7 @@ def get_her_goals(trajectories, extras):
     lengths = trajectories["lengths"]  # (N,) — valid steps per env
     valid = trajectories["valid"]  # (T * N,) bool
 
+    first_pos = her_obs["position"]  # (T, N, 2)
     next_pos = her_next_obs["position"]  # (T, N, 2)
 
     policy_obs_dim = extras["policy_obs_dim"]
@@ -46,9 +47,12 @@ def get_her_goals(trajectories, extras):
     obs = replace_goal_obs(obs, new_goals, policy_obs_dim)
     next_obs = replace_goal_obs(next_obs, new_goals, policy_obs_dim)
 
+    flat_first_pos = first_pos.view(-1, 2)
     flat_next_pos = next_pos.view(-1, 2)
     flat_goal = new_goals.view(-1, 2)
 
+    impossible_first_state = torch.norm(flat_first_pos - flat_goal, dim=-1) < goal_radius  # these states would have already terminated
+    valid = valid & ~impossible_first_state
     distances = torch.norm(flat_next_pos - flat_goal, dim=-1)  # (T * N,)
     # Recompute reward and termination against the hindsight goal — the original
     # term flag refers to the real goal and is meaningless after relabelling.
@@ -69,6 +73,7 @@ def get_her_goals(trajectories, extras):
 class TwoDimHERCfg(HERCfg):
     mode: str = "future"
     goal_radius: float = constants.GOAL_RADIUS
+    k: int = 4
 
     def __post_init__(self):
         # Set by SACRunner after env construction; not a config field.
