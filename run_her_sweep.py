@@ -11,14 +11,13 @@ A finished run drops a `DONE` file; re-running the launcher skips those, so it
 can be interrupted and resumed.
 
 Usage:
-  python run_her_sweep.py --jobs 4              # run the full sweep, 4 in parallel
+  python run_her_sweep.py                       # run the full sweep
   python run_her_sweep.py --envs one_dim        # restrict to one env
   python run_her_sweep.py --dry-run             # just print the commands
 """
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import os
 import subprocess
 import sys
@@ -45,12 +44,10 @@ def build_jobs(envs):
     """Return list of job dicts for the requested envs."""
     jobs = []
     for env in envs:
-        exp = ENVS[env]
-        log_dir = os.path.join(SWEEP_ROOT, exp)
+        log_dir = os.path.join(SWEEP_ROOT, ENVS[env])
         for config_name, her_flags in build_configs():
             for seed in SEEDS:
                 run_name = f"{config_name}_seed{seed}"
-                run_dir = os.path.join(ROOT, log_dir, run_name)
                 cmd = [
                     sys.executable, "-m", f"{env}.train",
                     "--agent", "sac",
@@ -60,32 +57,18 @@ def build_jobs(envs):
                     "--seed", str(seed),
                     *her_flags,
                 ]
-                jobs.append({"env": env, "run_name": run_name,
-                             "run_dir": run_dir, "cmd": cmd})
+                jobs.append({
+                    "env": env,
+                    "run_name": run_name,
+                    "run_dir": os.path.join(ROOT, log_dir, run_name),
+                    "cmd": cmd,
+                })
     return jobs
-
-
-def run_job(job):
-    """Run one training subprocess; return (run_name, status)."""
-    run_dir = job["run_dir"]
-    os.makedirs(run_dir, exist_ok=True)
-    log_path = os.path.join(run_dir, "train.log")
-    print(f"[START] {job['env']}/{job['run_name']}")
-    with open(log_path, "w") as log_file:
-        result = subprocess.run(job["cmd"], cwd=ROOT,
-                                stdout=log_file, stderr=subprocess.STDOUT)
-    if result.returncode == 0:
-        print(f"[OK]    {job['env']}/{job['run_name']}")
-        return job["run_name"], "ok"
-    print(f"[FAIL]  {job['env']}/{job['run_name']} (exit {result.returncode}, see {log_path})")
-    return job["run_name"], "failed"
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--jobs", type=int, default=4,
-                        help="Number of runs to execute concurrently.")
     parser.add_argument("--envs", nargs="+", choices=list(ENVS), default=list(ENVS),
                         help="Which environments to sweep (default: both).")
     parser.add_argument("--dry-run", action="store_true",
@@ -100,28 +83,32 @@ def main():
         print(f"\n{len(jobs)} runs total.")
         return
 
-    pending, skipped = [], []
-    for job in jobs:
-        if os.path.exists(os.path.join(job["run_dir"], "DONE")):
-            skipped.append(job["run_name"])
+    pending = [j for j in jobs if not os.path.exists(os.path.join(j["run_dir"], "DONE"))]
+    skipped = len(jobs) - len(pending)
+    print(f"{len(jobs)} runs total | {skipped} already done | {len(pending)} to run\n")
+
+    failed = []
+    for job in pending:
+        os.makedirs(job["run_dir"], exist_ok=True)
+        log_path = os.path.join(job["run_dir"], "train.log")
+        print(f"[START] {job['env']}/{job['run_name']}")
+        with open(log_path, "w") as log_file:
+            result = subprocess.run(job["cmd"], cwd=ROOT,
+                                    stdout=log_file, stderr=subprocess.STDOUT)
+        if result.returncode == 0:
+            print(f"[OK]    {job['env']}/{job['run_name']}")
         else:
-            pending.append(job)
-
-    print(f"{len(jobs)} runs total | {len(skipped)} already done | "
-          f"{len(pending)} to run | {args.jobs} parallel\n")
-
-    results = {"ok": [], "failed": []}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        for run_name, status in pool.map(run_job, pending):
-            results[status].append(run_name)
+            print(f"[FAIL]  {job['env']}/{job['run_name']} "
+                  f"(exit {result.returncode}, see {log_path})")
+            failed.append(job["run_name"])
 
     print("\n=== Sweep summary ===")
-    print(f"  ok      : {len(results['ok'])}")
-    print(f"  skipped : {len(skipped)}")
-    print(f"  failed  : {len(results['failed'])}")
-    for run_name in results["failed"]:
+    print(f"  ok      : {len(pending) - len(failed)}")
+    print(f"  skipped : {skipped}")
+    print(f"  failed  : {len(failed)}")
+    for run_name in failed:
         print(f"    FAILED: {run_name}")
-    if results["failed"]:
+    if failed:
         sys.exit(1)
 
 
