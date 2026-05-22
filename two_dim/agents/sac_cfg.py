@@ -9,7 +9,7 @@ SAC_CFG = SACRunnerCfg(
     alpha_lr = 3e-4,
     target_entropy = "auto",
 
-    replay_buffer_size = 1_000_000,
+    replay_buffer_size = 10_000_000,
     warmup_transitions = 100_000,
 
     q_hidden_dims = [32, 32],
@@ -26,14 +26,14 @@ SAC_CFG = SACRunnerCfg(
     reward_G_max = 5.0,
     reward_clip = 0.0,
 
-    max_steps = 500_000,
+    max_steps = 200_000,
     steps_per_iter = 1,
-    num_train_updates = 5,
-    batch_size = 512,
+    num_train_updates = 10,
+    batch_size = 1024,
 
     save_interval = 600,
 
     collect_states = False,
 
-    # her_cfg = TwoDimHERCfg(mode="future")
+    her_cfg = TwoDimHERCfg(mode="future")
 )

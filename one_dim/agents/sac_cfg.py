@@ -26,7 +26,7 @@ SAC_CFG = SACRunnerCfg(
     reward_G_max = 5.0,
     reward_clip = 0.0,
 
-    max_steps = 500_000,
+    max_steps = 200_000,
     steps_per_iter = 1,
     num_train_updates = 10,
     batch_size = 512,
