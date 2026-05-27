@@ -14,7 +14,7 @@ ENVIRONMENT_TYPE = 'random'  # Options are: 'fixed', 'random'
 # The frame rate for pygame, which determines how quickly the program runs.
 # Specifically, this is the number of time steps per second that the robot will execute an action in the environment.
 # You may wish to slow this down to observe the robot's movement, or speed it up to run large-scale experiments.
-FRAME_RATE = 30
+FRAME_RATE = 300
 
 # You may want to add your own configuration variables here, depending on the algorithm you implement.
 NUM_DEMOS = 5

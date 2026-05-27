@@ -91,15 +91,18 @@ def main():
 
     # Attach live matplotlib visualisers over the 2D state space (one 2x2
     # figure per visualiser, one subplot per fixed goal). The policy quiver
-    # works for both SAC and PPO; the value heatmap needs a critic, so it is
-    # SAC-only. These are independent of `--headless`, which only suppresses
-    # the pygame environment window; pass `--no-visualise` to skip them
-    # entirely (e.g. for parallel sweep runs).
+    # works for both SAC and PPO; the value heatmap has a per-algorithm
+    # implementation (SAC: mean min(q1, q2) over sampled actions; PPO: V
+    # network direct). These are independent of `--headless`, which only
+    # suppresses the pygame environment window; pass `--no-visualise` to skip
+    # them entirely (e.g. for parallel sweep runs).
     if not args.no_visualise:
-        from two_dim.visualise import Visualiser, ValueVisualiser
+        from two_dim.visualise import Visualiser, SACValueVisualiser, PPOValueVisualiser
         env._visualisers.append(Visualiser(runner, env))
         if args.agent == "sac":
-            env._visualisers.append(ValueVisualiser(runner, env))
+            env._visualisers.append(SACValueVisualiser(runner, env))
+        elif args.agent == "ppo":
+            env._visualisers.append(PPOValueVisualiser(runner, env))
 
     runner.learn()
     writer.close()

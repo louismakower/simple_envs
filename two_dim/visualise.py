@@ -127,30 +127,24 @@ class Visualiser:
         self._fig.canvas.flush_events()
 
 
-class ValueVisualiser:
-    """Live visualisation of the SAC state-value function over the 2D state.
+class _BaseValueVisualiser:
+    """Shared figure + update loop for value heatmaps over the 2D state.
 
     One 2x2 figure: each subplot fixes the goal at a corner from `GOALS` and
-    draws V(state) as a heatmap. SAC's critic Q(state, goal, action) cannot be
-    shown directly, so it is collapsed to V(state, goal) = mean over sampled
-    policy actions of min(q1, q2).
-
-    Unlike the policy `Visualiser`, this is SAC-only: it reaches into the
-    SACRunner's twin critics, observation normaliser and stochastic policy,
-    none of which exist for PPO. The value is the raw critic output, i.e. in
-    scaled-reward units. All four subplots share one autoscaled colour range so
-    values are directly comparable across goals.
+    draws V(state) as a heatmap. Subclasses implement `_value(states, goals)`
+    to plug in the algorithm's value function and set `_title` / `_clabel`.
+    All four subplots share one autoscaled colour range each update so values
+    are directly comparable across goals.
     """
 
     # Resolution of the (square) state grid evaluated for the heatmap.
     HEATMAP_RES = 80
-    # Policy action samples averaged per grid cell to estimate V.
-    NUM_SAMPLES = 16
 
-    def __init__(self, runner, env, update_every: int = 20):
-        # `runner` is the RLRunner; `runner.runner` is the SACRunner whose
-        # critics/policy/normaliser we query directly.
-        self._sac = runner.runner
+    # Subclasses override these.
+    _title = "Value"
+    _clabel = "V"
+
+    def __init__(self, env, update_every: int = 20):
         self._env = env
         self._update_every = update_every
         self._step = 0
@@ -169,7 +163,7 @@ class ValueVisualiser:
         blank = np.zeros((self.HEATMAP_RES, self.HEATMAP_RES))
         self._ims = []
         for ax, goal in zip(self._axes, GOALS):
-            # Colour range autoscales (shared) each update -- Q has no fixed bounds.
+            # Colour range autoscales (shared) each update -- V has no fixed bounds.
             im = ax.imshow(
                 blank, origin="lower", extent=(0.0, 1.0, 0.0, 1.0),
                 aspect="equal", cmap="viridis",
@@ -180,34 +174,16 @@ class ValueVisualiser:
             ax.set_xlabel("state x")
             ax.set_ylabel("state y")
 
-        self._fig.suptitle("Value: mean min(q1, q2) over sampled actions")
+        self._fig.suptitle(self._title)
         # One shared colorbar across all four subplots.
         self._fig.colorbar(
-            self._ims[0], ax=self._axes, label="Q (scaled-reward units)",
-            fraction=0.046,
+            self._ims[0], ax=self._axes, label=self._clabel, fraction=0.046,
         )
         self._fig.show()
 
     @torch.no_grad()
     def _value(self, states: torch.Tensor, goals: torch.Tensor) -> torch.Tensor:
-        """Sampled-action value V at (state, goal) pairs.
-
-        `states`, `goals` are (N, 2) tensors. For each pair, NUM_SAMPLES actions
-        are drawn from the stochastic policy and min(q1, q2) is averaged over
-        them. Returns a (N,) value tensor.
-        """
-        sac = self._sac
-        sac._set_eval()
-        obs = {"policy": states, "goal": {"desired_goal": goals}}
-        obs_n = sac.obs_norm(sac.add_goal_obs(obs))
-        dist = sac.policy.dist(obs_n)
-        v = torch.zeros(obs_n.shape[0], 1, device=self._device)
-        for _ in range(self.NUM_SAMPLES):
-            act = dist.sample()
-            q_input = sac._q_input(obs_n, act)
-            q = torch.minimum(sac.q1.network(q_input), sac.q2.network(q_input))
-            v += q
-        return (v / self.NUM_SAMPLES).squeeze(-1)
+        raise NotImplementedError
 
     def maybe_update(self):
         """Refresh the matplotlib figure every `update_every` steps."""
@@ -238,3 +214,64 @@ class ValueVisualiser:
 
         self._fig.canvas.draw_idle()
         self._fig.canvas.flush_events()
+
+
+class SACValueVisualiser(_BaseValueVisualiser):
+    """SAC value heatmap.
+
+    SAC's critic Q(state, goal, action) cannot be shown directly on a 2D
+    heatmap, so it is collapsed to V(state, goal) = mean over sampled policy
+    actions of min(q1, q2). Reaches into the SACRunner's twin critics,
+    observation normaliser and stochastic policy.
+    """
+
+    # Policy action samples averaged per grid cell to estimate V.
+    NUM_SAMPLES = 16
+
+    _title = "Value: mean min(q1, q2) over sampled actions"
+    _clabel = "Q (scaled-reward units)"
+
+    def __init__(self, runner, env, update_every: int = 20):
+        # `runner.runner` is the SACRunner whose critics/policy/normaliser
+        # we query directly.
+        self._sac = runner.runner
+        super().__init__(env, update_every)
+
+    @torch.no_grad()
+    def _value(self, states: torch.Tensor, goals: torch.Tensor) -> torch.Tensor:
+        sac = self._sac
+        sac._set_eval()
+        obs = {"policy": states, "goal": {"desired_goal": goals}}
+        obs_n = sac.obs_norm(sac.add_goal_obs(obs))
+        dist = sac.policy.dist(obs_n)
+        v = torch.zeros(obs_n.shape[0], 1, device=self._device)
+        for _ in range(self.NUM_SAMPLES):
+            act = dist.sample()
+            q_input = sac._q_input(obs_n, act)
+            q = torch.minimum(sac.q1.network(q_input), sac.q2.network(q_input))
+            v += q
+        return (v / self.NUM_SAMPLES).squeeze(-1)
+
+
+class PPOValueVisualiser(_BaseValueVisualiser):
+    """PPO value heatmap.
+
+    PPO trains a scalar state-value network V(state, goal) directly, so the
+    heatmap is just that network evaluated on the (state, goal) grid -- no
+    action sampling, no observation normalisation.
+    """
+
+    _title = "Value: V(state, goal)"
+    _clabel = "V"
+
+    def __init__(self, runner, env, update_every: int = 20):
+        # `runner.runner` is the PPORunner whose value network we query directly.
+        self._ppo = runner.runner
+        super().__init__(env, update_every)
+
+    @torch.no_grad()
+    def _value(self, states: torch.Tensor, goals: torch.Tensor) -> torch.Tensor:
+        ppo = self._ppo
+        ppo.v.eval()
+        obs = {"policy": states, "goal": {"desired_goal": goals}}
+        return ppo.v(ppo.add_goal_obs(obs)).squeeze(-1)

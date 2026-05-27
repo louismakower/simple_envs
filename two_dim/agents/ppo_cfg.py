@@ -3,8 +3,8 @@ from louis_rl.ppo import PPORunnerCfg
 PPO_CFG = PPORunnerCfg(
         experiment_name="ppo_2d",
         num_iterations=2000,
-        steps_per_rollout=64,
-        num_policy_grad_steps=10,
+        steps_per_rollout=16,
+        num_policy_grad_steps=2,
         num_v_grad_steps=10,
         policy_lr=3e-4,
         v_lr=3e-4,

@@ -81,29 +81,22 @@ class Visualiser:
         self._fig.canvas.flush_events()
 
 
-class ValueVisualiser:
-    """Live visualisation of the SAC state-value function over (state, goal).
+class _BaseValueVisualiser:
+    """Shared figure + update loop for value heatmaps over (state, goal).
 
-    SAC's critic Q(state, goal, action) has a 3D input, so it cannot be shown
-    directly on a 2D heatmap. This collapses it to a value function
-    V(state, goal) = mean over sampled policy actions of min(q1, q2), giving a
-    heatmap on the same (state, goal) axes as the policy heatmap.
-
-    Unlike the policy `Visualiser`, this is SAC-only: it reaches into the
-    SACRunner's twin critics, observation normaliser and stochastic policy,
-    none of which exist for PPO. The value is the raw critic output, i.e. in
-    scaled-reward units (the critic is trained on normalised rewards).
+    Subclasses implement `_value(states, goals)` to plug in the algorithm's
+    value function and set `_title` / `_clabel`. The colour range autoscales
+    each update -- V has no fixed bounds.
     """
 
     # Resolution of the (state, goal) grid evaluated for the heatmap.
     HEATMAP_RES = 80
-    # Policy action samples averaged per grid cell to estimate V.
-    NUM_SAMPLES = 16
 
-    def __init__(self, runner, env, update_every: int = 20):
-        # `runner` is the RLRunner; `runner.runner` is the SACRunner whose
-        # critics/policy/normaliser we query directly.
-        self._sac = runner.runner
+    # Subclasses override these.
+    _title = "Value"
+    _clabel = "V"
+
+    def __init__(self, env, update_every: int = 20):
         self._env = env
         self._update_every = update_every
         self._step = 0
@@ -119,39 +112,21 @@ class ValueVisualiser:
             pass
 
         blank = np.zeros((self.HEATMAP_RES, self.HEATMAP_RES))
-        # Colour range autoscales each update -- Q has no fixed bounds.
         self._im = self._ax.imshow(
             blank, origin="lower", extent=(0.0, 1.0, 0.0, 1.0), aspect="auto",
             cmap="viridis",
         )
-        self._ax.set_title("Value: mean min(q1, q2) over sampled actions")
+        self._ax.set_title(self._title)
         self._ax.set_xlabel("state")
         self._ax.set_ylabel("goal")
-        self._fig.colorbar(self._im, ax=self._ax, label="Q (scaled-reward units)")
+        self._fig.colorbar(self._im, ax=self._ax, label=self._clabel)
 
         self._fig.tight_layout()
         self._fig.show()
 
     @torch.no_grad()
     def _value(self, states: torch.Tensor, goals: torch.Tensor) -> torch.Tensor:
-        """Sampled-action value V at (state, goal) pairs.
-
-        `states`, `goals` are (N, 1) tensors. For each pair, NUM_SAMPLES actions
-        are drawn from the stochastic policy and min(q1, q2) is averaged over
-        them. Returns a (N,) value tensor.
-        """
-        sac = self._sac
-        sac._set_eval()
-        obs = {"policy": states, "goal": {"desired_goal": goals}}
-        obs_n = sac.obs_norm(sac.add_goal_obs(obs))
-        dist = sac.policy.dist(obs_n)
-        v = torch.zeros(obs_n.shape[0], 1, device=self._device)
-        for _ in range(self.NUM_SAMPLES):
-            act = dist.sample()
-            q_input = sac._q_input(obs_n, act)
-            q = torch.minimum(sac.q1.network(q_input), sac.q2.network(q_input))
-            v += q
-        return (v / self.NUM_SAMPLES).squeeze(-1)
+        raise NotImplementedError
 
     def maybe_update(self):
         """Refresh the matplotlib heatmap every `update_every` steps."""
@@ -171,3 +146,66 @@ class ValueVisualiser:
 
         self._fig.canvas.draw_idle()
         self._fig.canvas.flush_events()
+
+
+class SACValueVisualiser(_BaseValueVisualiser):
+    """SAC value heatmap over (state, goal).
+
+    SAC's critic Q(state, goal, action) has a 3D input, so it cannot be shown
+    directly. This collapses it to V(state, goal) = mean over sampled policy
+    actions of min(q1, q2). Reaches into the SACRunner's twin critics,
+    observation normaliser and stochastic policy. The value is the raw critic
+    output, i.e. in scaled-reward units (the critic is trained on normalised
+    rewards).
+    """
+
+    # Policy action samples averaged per grid cell to estimate V.
+    NUM_SAMPLES = 16
+
+    _title = "Value: mean min(q1, q2) over sampled actions"
+    _clabel = "Q (scaled-reward units)"
+
+    def __init__(self, runner, env, update_every: int = 20):
+        # `runner.runner` is the SACRunner whose critics/policy/normaliser
+        # we query directly.
+        self._sac = runner.runner
+        super().__init__(env, update_every)
+
+    @torch.no_grad()
+    def _value(self, states: torch.Tensor, goals: torch.Tensor) -> torch.Tensor:
+        sac = self._sac
+        sac._set_eval()
+        obs = {"policy": states, "goal": {"desired_goal": goals}}
+        obs_n = sac.obs_norm(sac.add_goal_obs(obs))
+        dist = sac.policy.dist(obs_n)
+        v = torch.zeros(obs_n.shape[0], 1, device=self._device)
+        for _ in range(self.NUM_SAMPLES):
+            act = dist.sample()
+            q_input = sac._q_input(obs_n, act)
+            q = torch.minimum(sac.q1.network(q_input), sac.q2.network(q_input))
+            v += q
+        return (v / self.NUM_SAMPLES).squeeze(-1)
+
+
+class PPOValueVisualiser(_BaseValueVisualiser):
+    """PPO value heatmap over (state, goal).
+
+    PPO trains a scalar state-value network V(state, goal) directly, so the
+    heatmap is just that network evaluated on the grid -- no action sampling,
+    no observation normalisation.
+    """
+
+    _title = "Value: V(state, goal)"
+    _clabel = "V"
+
+    def __init__(self, runner, env, update_every: int = 20):
+        # `runner.runner` is the PPORunner whose value network we query directly.
+        self._ppo = runner.runner
+        super().__init__(env, update_every)
+
+    @torch.no_grad()
+    def _value(self, states: torch.Tensor, goals: torch.Tensor) -> torch.Tensor:
+        ppo = self._ppo
+        ppo.v.eval()
+        obs = {"policy": states, "goal": {"desired_goal": goals}}
+        return ppo.v(ppo.add_goal_obs(obs)).squeeze(-1)

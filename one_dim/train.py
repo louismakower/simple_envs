@@ -90,14 +90,17 @@ def main():
     runner = RLRunner(env=env, cfg=agent_cfg, log_dir=log_dir, writer=writer)
 
     # Attach live matplotlib visualisers over the (state, goal) unit square.
-    # The policy heatmap works for both SAC and PPO; the value heatmap needs a
-    # critic, so it is SAC-only. Both are skipped when the display is off or
-    # when `--no-visualise` is passed (e.g. for parallel sweep runs).
+    # The policy heatmap works for both SAC and PPO; the value heatmap has a
+    # per-algorithm implementation (SAC: mean min(q1, q2) over sampled actions;
+    # PPO: V network direct). Both are skipped when the display is off or when
+    # `--no-visualise` is passed (e.g. for parallel sweep runs).
     if not args.headless and not args.no_visualise:
-        from one_dim.visualise import Visualiser, ValueVisualiser
+        from one_dim.visualise import Visualiser, SACValueVisualiser, PPOValueVisualiser
         env._visualisers.append(Visualiser(runner, env))
         if args.agent == "sac":
-            env._visualisers.append(ValueVisualiser(runner, env))
+            env._visualisers.append(SACValueVisualiser(runner, env))
+        elif args.agent == "ppo":
+            env._visualisers.append(PPOValueVisualiser(runner, env))
 
     runner.learn()
     writer.close()
