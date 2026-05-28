@@ -34,16 +34,16 @@ def apply_her_overrides(agent_cfg, args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--agent", type=str, required=True, choices=["ppo", "sac"])
-    parser.add_argument("--num-envs", type=int, default=1)
+    parser.add_argument("--num_envs", type=int, default=1)
     parser.add_argument("--n", type=int, default=None, help="State / action dimensionality.")
-    parser.add_argument("--max-ep-len", type=int, default=None)
-    parser.add_argument("--log-dir", type=str, default="runs")
+    parser.add_argument("--max_ep_len", type=int, default=None)
+    parser.add_argument("--log_dir", type=str, default="runs")
     parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--her-mode", type=str, default=None, choices=["future", "final"])
-    parser.add_argument("--her-k", type=int, default=None)
-    parser.add_argument("--disable-her", action="store_true", default=False)
-    parser.add_argument("--run-name", type=str, default=None)
-    parser.add_argument("--no-visualise", action="store_true", default=False)
+    parser.add_argument("--her_mode", type=str, default=None, choices=["future", "final"])
+    parser.add_argument("--her_k", type=int, default=None)
+    parser.add_argument("--disable_her", action="store_true", default=False)
+    parser.add_argument("--run_name", type=str, default=None)
+    parser.add_argument("--no_visualise", action="store_true", default=False)
     args = parser.parse_args()
 
     if args.seed is not None:
@@ -63,10 +63,13 @@ def main():
         agent_cfg = agents.PPO_CFG
     else:
         agent_cfg = agents.SAC_CFG
+
+    if agent_cfg.her_cfg is not None:
         her_cfg = dataclasses.replace(agent_cfg.her_cfg, n=env_cfg.n, goal_radius=env_cfg.goal_radius)
         agent_cfg = dataclasses.replace(agent_cfg, her_cfg=her_cfg)
 
     agent_cfg = apply_her_overrides(agent_cfg, args)
+    print(agent_cfg)
 
     run_name = args.run_name or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     if args.run_name is not None:

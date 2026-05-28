@@ -33,6 +33,10 @@ class NDimVecEnv:
     @property
     def num_envs(self) -> int:
         return self._num_envs
+    
+    @property
+    def max_episode_length(self) -> int:
+        return self.max_ep_len
 
     @property
     def action_space(self) -> SpaceInfo:
@@ -79,9 +83,9 @@ class NDimVecEnv:
     
     def get_obs(self, state, goal):
         return {
-            "policy": state,
-            "goal": {"desired_goal": goal},
-            "her": {"position": state},
+            "policy": state.clone(),
+            "goal": {"desired_goal": goal.clone()},
+            "her": {"position": state.clone()},
         }
     
     def get_terminal_obs(self, state, goal, env_ids):
@@ -120,7 +124,9 @@ class NDimVecEnv:
         )
     
     def compute_rew(self, state):
-        return (self._dist(state, self.goal) < self.goal_radius).float()
+        reached = (self._dist(state, self.goal) < self.goal_radius).float() * self.n
+        neg_step = -0.01
+        return 10 * reached + neg_step
     
     def compute_term(self, state):
         return (self._dist(state, self.goal) < self.goal_radius)

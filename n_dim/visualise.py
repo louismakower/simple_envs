@@ -27,7 +27,7 @@ FILL_VALUE = 0.5
 
 class PolicyVisualiser:
     QUIVER_RES = 21
-    MAGNIFY = 4.0
+    MAGNIFY = 1.0
 
     def __init__(self, runner, env, update_every: int = 1):
         self._runner = runner
