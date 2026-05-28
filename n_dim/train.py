@@ -44,6 +44,7 @@ def main():
     parser.add_argument("--disable_her", action="store_true", default=False)
     parser.add_argument("--run_name", type=str, default=None)
     parser.add_argument("--no_visualise", action="store_true", default=False)
+    parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
 
     if args.seed is not None:
@@ -57,18 +58,18 @@ def main():
     if args.max_ep_len is not None:
         env_overrides["max_ep_len"] = args.max_ep_len
     env_cfg = dataclasses.replace(NDimVecEnvCfg(), **env_overrides)
-    env = NDimVecEnv(env_cfg)
+    env = NDimVecEnv(env_cfg, device=args.device)
 
     if args.agent == "ppo":
         agent_cfg = agents.PPO_CFG
     else:
         agent_cfg = agents.SAC_CFG
 
-    if agent_cfg.her_cfg is not None:
-        her_cfg = dataclasses.replace(agent_cfg.her_cfg, n=env_cfg.n, goal_radius=env_cfg.goal_radius)
-        agent_cfg = dataclasses.replace(agent_cfg, her_cfg=her_cfg)
+        if agent_cfg.her_cfg is not None:
+            her_cfg = dataclasses.replace(agent_cfg.her_cfg, n=env_cfg.n, goal_radius=env_cfg.goal_radius)
+            agent_cfg = dataclasses.replace(agent_cfg, her_cfg=her_cfg)
 
-    agent_cfg = apply_her_overrides(agent_cfg, args)
+        agent_cfg = apply_her_overrides(agent_cfg, args)
     print(agent_cfg)
 
     run_name = args.run_name or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -86,10 +87,11 @@ def main():
     runner = RLRunner(env=env, cfg=agent_cfg, log_dir=log_dir, writer=writer)
 
     if not args.no_visualise:
-        from n_dim.visualise import PolicyVisualiser, SACValueVisualiser, PPOValueVisualiser
+        from n_dim.visualise import PolicyVisualiser, SACValueVisualiser, PPOValueVisualiser, BufferVisualiser
         env._visualisers.append(PolicyVisualiser(runner, env))
         if args.agent == "sac":
             env._visualisers.append(SACValueVisualiser(runner, env))
+            env._visualisers.append(BufferVisualiser(runner, env))
         else:
             env._visualisers.append(PPOValueVisualiser(runner, env))
 

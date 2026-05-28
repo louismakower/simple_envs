@@ -8,6 +8,10 @@ second state dimension is padded by tiling s_0.
 
 `SACValueVisualiser` / `PPOValueVisualiser` show value vs. distance-to-goal as
 a scatter over randomly sampled (state, goal) pairs in [0,1]^n.
+
+`BufferVisualiser` shows, for each state dimension k, a 2D histogram of
+(state_k, goal_k) pairs in the replay buffer, coloured by mean reward. One
+subplot per dimension.
 """
 
 import math
@@ -222,3 +226,103 @@ class PPOValueVisualiser(_BaseValueVisualiser):
         ppo.v.eval()
         obs = {"policy": states, "goal": {"desired_goal": goals}}
         return ppo.v(ppo.add_goal_obs(obs)).squeeze(-1)
+
+
+class BufferVisualiser:
+    """Per-dimension 2D histograms of (state_k, goal_k): mean reward and transition count."""
+
+    NUM_BINS = 25
+    NUM_SAMPLES = 15_000
+
+    def __init__(self, runner, env, update_every: int = 20):
+        self._buffer = runner.runner.buffer
+        self._policy_obs_dim = runner.runner.policy_obs_dim
+        self._n = env.n
+        self._update_every = update_every
+        self._step = 0
+        self._setup_figure()
+
+    def _setup_figure(self):
+        plt.ion()
+        n = self._n
+        self._fig, axes = plt.subplots(n, 2, figsize=(8, 4 * n), squeeze=False)
+        try:
+            self._fig.canvas.manager.set_window_title("Buffer: state vs goal")
+        except Exception:
+            pass
+
+        bins = self.NUM_BINS
+        empty = np.full((bins, bins), np.nan)
+        self._reward_images = []
+        self._count_images = []
+
+        for k in range(n):
+            rew_ax = axes[k, 0]
+            cnt_ax = axes[k, 1]
+
+            rim = rew_ax.imshow(
+                empty,
+                origin="lower", extent=[0, 1, 0, 1],
+                aspect="equal", interpolation="nearest",
+                cmap="RdYlGn",
+            )
+            self._fig.colorbar(rim, ax=rew_ax, label="mean reward")
+            rew_ax.set_xlabel(f"state dim {k}")
+            rew_ax.set_ylabel(f"goal dim {k}")
+            rew_ax.set_title(f"dim {k} — mean reward")
+            self._reward_images.append(rim)
+
+            cim = cnt_ax.imshow(
+                empty,
+                origin="lower", extent=[0, 1, 0, 1],
+                aspect="equal", interpolation="nearest",
+                cmap="Blues",
+            )
+            self._fig.colorbar(cim, ax=cnt_ax, label="transitions")
+            cnt_ax.set_xlabel(f"state dim {k}")
+            cnt_ax.set_ylabel(f"goal dim {k}")
+            cnt_ax.set_title(f"dim {k} — transitions")
+            self._count_images.append(cim)
+
+        self._fig.suptitle("Replay buffer: state vs goal")
+        self._fig.tight_layout()
+        self._fig.show()
+
+    def maybe_update(self):
+        self._step += 1
+        if self._step % self._update_every == 0:
+            self.update()
+
+    def update(self):
+        buf = self._buffer
+        filled = buf.capacity if buf.full else buf.idx
+        if filled == 0:
+            return
+
+        n_samples = min(filled, self.NUM_SAMPLES)
+        idx = torch.randint(0, filled, (n_samples,))
+        obses = buf.obses[idx].cpu().numpy()
+        rewards = buf.rewards[idx].squeeze(-1).cpu().numpy()
+        p = self._policy_obs_dim
+        edges = np.linspace(0.0, 1.0, self.NUM_BINS + 1)
+
+        rew_vmin = -0.01
+        rew_vmax = 10 * self._n - 0.01
+
+        for k, (rim, cim) in enumerate(zip(self._reward_images, self._count_images)):
+            state_k = obses[:, k]
+            goal_k = obses[:, p + k]
+
+            counts, _, _ = np.histogram2d(state_k, goal_k, bins=edges)
+            reward_sum, _, _ = np.histogram2d(state_k, goal_k, bins=edges, weights=rewards)
+            mean_reward = np.where(counts > 0, reward_sum / counts, np.nan)
+
+            rim.set_data(mean_reward.T)
+            rim.set_clim(vmin=rew_vmin, vmax=rew_vmax)
+
+            count_grid = np.where(counts > 0, counts, np.nan)
+            cim.set_data(count_grid.T)
+            cim.set_clim(vmin=0, vmax=counts.max())
+
+        self._fig.canvas.draw_idle()
+        self._fig.canvas.flush_events()

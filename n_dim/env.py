@@ -6,7 +6,7 @@ class NDimVecEnv:
     def __init__(
             self,
             cfg: NDimVecEnvCfg,
-            device="cpu",
+            device="cuda",
     ):
         self.n = cfg.n
         self._num_envs = cfg.num_envs
@@ -15,14 +15,10 @@ class NDimVecEnv:
         self.max_step_size = cfg.max_step_size
         self._device = device
 
-        self.state = torch.rand(
-            size=(self.num_envs, self.n)
-        )
-        self.goal = torch.rand(
-            size=(self.num_envs, self.n)
-        )
+        self.state = torch.rand(size=(self.num_envs, self.n), device=self._device)
+        self.goal = self._create_goals()
 
-        self.ep_counters = torch.zeros(size=(self.num_envs,))
+        self.ep_counters = torch.zeros(size=(self.num_envs,), device=self._device)
 
         self._visualisers = []
 
@@ -59,7 +55,7 @@ class NDimVecEnv:
         next_state = torch.clamp(next_state, 0., 1.)
         self.ep_counters += 1
 
-        rew = self.compute_rew(next_state)
+        rew = self.compute_rew(next_state, self.goal)
         term = self.compute_term(next_state)
         timeout = self.compute_timeout()
 
@@ -98,17 +94,17 @@ class NDimVecEnv:
     def reset(self, env_ids: torch.Tensor = None):
         # reset all if no env ids are given
         if env_ids is None:
-            env_ids = torch.ones(size=(self.num_envs,), dtype=torch.bool)
+            env_ids = torch.ones(size=(self.num_envs,), dtype=torch.bool, device=self._device)
 
         num_reset_envs = torch.sum(env_ids).int()
-        new_goals = torch.rand(size=(num_reset_envs, self.n))
+        new_goals = self._create_goals(num_reset_envs)
         self.goal[env_ids] = new_goals
 
-        new_start_pos = torch.rand(size=(num_reset_envs, self.n))
-        far_enough = self._dist(new_start_pos, new_goals) >= self.goal_radius
+        new_start_pos = torch.rand(size=(num_reset_envs, self.n), device=self._device)
+        far_enough = _dist(new_start_pos, new_goals) >= self.goal_radius
         while not far_enough.all():
-            new_start_pos[~far_enough] = torch.rand(size=((~far_enough).sum(), self.n))
-            far_enough = self._dist(new_start_pos, new_goals) >= self.goal_radius
+            new_start_pos[~far_enough] = torch.rand(size=((~far_enough).sum(), self.n), device=self._device)
+            far_enough = _dist(new_start_pos, new_goals) >= self.goal_radius
 
 
         self.state[env_ids] = new_start_pos
@@ -116,38 +112,61 @@ class NDimVecEnv:
 
         return self.get_obs(self.state, self.goal), {}
 
-
-    def _dist(self, state, goal):
-        return torch.norm(
-            state - goal,
-            dim=-1,
-        )
-    
-    def compute_rew(self, state):
-        reached = (self._dist(state, self.goal) < self.goal_radius).float() * self.n
-        neg_step = -0.01
-        return 10 * reached + neg_step
+    def compute_rew(self, state, goal):
+        return reward_fn(state, goal, self.goal_radius, self.n)
     
     def compute_term(self, state):
-        return (self._dist(state, self.goal) < self.goal_radius)
+        return (_dist(state, self.goal) < self.goal_radius)
     
     def compute_timeout(self):
         return self.ep_counters >= self.max_ep_len
     
+    def _create_goals(self, num_goals=None):
+        if num_goals is None:
+            num_goals = self.num_envs
+        return (torch.rand(size=(num_goals, self.n), device=self._device) * 0.8) + 0.1
+
+    
+def reward_fn(state, goal, goal_radius, n):
+    reached = (_dist(state, goal) < goal_radius).float() * n
+    neg_step = -0.01
+    return 10 * reached + neg_step
+
+def _dist(pos1, pos2):
+    return torch.norm(
+        pos1 - pos2,
+        dim=-1,
+    )
 
 if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    import numpy as np
 
-    env_cfg = NDimVecEnvCfg()
-    env = NDimVecEnv(env_cfg)
+    num_envs = 10_00000
+    ep_len = 100
+    n = 1
+    num_steps = 1 * ep_len
+
+    env_cfg = NDimVecEnvCfg(num_envs=num_envs, max_ep_len=ep_len, n=1, max_step_size=0)
+    env = NDimVecEnv(env_cfg, device="cuda")
     env.reset()
-    print(env.state, env.goal)
-    while True:
-        num = input("enter a step: ")
-        action = torch.tensor([float(num)]).expand_as(env.state)
-        obs, rew, term, timeout, extras = env.step(action)
-        print("rew", rew)
-        print("obs", obs)
-        print("term", term)
-        print("timeout", timeout)
-        print(extras)
-        print(env.state, env.goal)
+
+    all_steps = []
+    all_positions = []
+
+    for _ in range(num_steps):
+        all_steps.append(env.ep_counters.cpu().numpy().copy())
+        all_positions.append(env.state[:, 0].cpu().numpy().copy())
+        action = torch.rand(num_envs, n, device=env.device) * 2 - 1
+        env.step(action)
+
+    steps = np.concatenate(all_steps)
+    positions = np.concatenate(all_positions)
+
+    plt.figure(figsize=(12, 5))
+    plt.hist2d(steps, positions, bins=[ep_len, 80], range=[[0, ep_len], [0, 1]], cmap="hot")
+    plt.colorbar(label="num envs")
+    plt.xlabel("steps since reset")
+    plt.ylabel("position")
+    plt.tight_layout()
+    plt.savefig("test.png")

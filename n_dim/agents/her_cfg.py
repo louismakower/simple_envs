@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-
 import torch
+
+from n_dim.env import reward_fn
 
 from louis_rl.her import HERCfg, build_hindsight_goals
 
@@ -42,7 +43,7 @@ def get_her_goals(trajectories, extras):
     valid = valid & ~impossible_first_state
     distances = torch.norm(flat_next_pos - flat_goal, dim=-1)
     within = distances < goal_radius
-    reward = within.float()
+    reward = reward_fn(flat_next_pos, flat_goal, goal_radius, n)
 
     return {
         "obs": obs.view(-1, obs.shape[2])[valid],
