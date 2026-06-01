@@ -142,12 +142,12 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import numpy as np
 
-    num_envs = 10_00000
-    ep_len = 100
+    num_envs = 10_0000
+    ep_len = 300
     n = 1
     num_steps = 1 * ep_len
 
-    env_cfg = NDimVecEnvCfg(num_envs=num_envs, max_ep_len=ep_len, n=1, max_step_size=0)
+    env_cfg = NDimVecEnvCfg(num_envs=num_envs, max_ep_len=ep_len, n=1, max_step_size=0.1, goal_radius=0.1)
     env = NDimVecEnv(env_cfg, device="cuda")
     env.reset()
 
@@ -163,9 +163,14 @@ if __name__ == "__main__":
     steps = np.concatenate(all_steps)
     positions = np.concatenate(all_positions)
 
+    counts, xedges, yedges = np.histogram2d(steps, positions, bins=[ep_len, 80], range=[[0, ep_len], [0, 1]])
+    # Normalise each vertical slice (each step column) to a probability distribution over position.
+    col_sums = counts.sum(axis=1, keepdims=True)
+    counts = np.divide(counts, col_sums, out=np.zeros_like(counts), where=col_sums > 0)
+
     plt.figure(figsize=(12, 5))
-    plt.hist2d(steps, positions, bins=[ep_len, 80], range=[[0, ep_len], [0, 1]], cmap="hot")
-    plt.colorbar(label="num envs")
+    plt.pcolormesh(xedges, yedges, counts.T, cmap="hot", vmin=0, vmax=0.08)
+    plt.colorbar(label="fraction of envs per step")
     plt.xlabel("steps since reset")
     plt.ylabel("position")
     plt.tight_layout()
