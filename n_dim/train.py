@@ -7,7 +7,6 @@ import random
 
 import numpy as np
 import torch
-from torch.utils.tensorboard import SummaryWriter
 
 from louis_rl.algorithm import RLRunner
 from n_dim import agents
@@ -79,14 +78,12 @@ def main():
         log_dir = os.path.join(args.log_dir, run_name)
     else:
         log_dir = os.path.join(args.log_dir, agent_cfg.experiment_name, run_name)
-    print(f"[INFO] Logging experiment in directory: {log_dir}")
-    writer = SummaryWriter(log_dir=log_dir)
 
     os.makedirs(log_dir, exist_ok=True)
     with open(os.path.join(log_dir, "cfg.json"), "w") as f:
         json.dump(dataclasses.asdict(agent_cfg), f, indent=2)
 
-    runner = RLRunner(env=env, cfg=agent_cfg, log_dir=log_dir, writer=writer)
+    runner = RLRunner(env=env, cfg=agent_cfg, log_dir=log_dir)
 
     if not args.no_visualise:
         from n_dim.visualise import PolicyVisualiser, SACValueVisualiser, PPOValueVisualiser, BufferVisualiser
@@ -107,7 +104,7 @@ def main():
             for v in env._visualisers:
                 v.save(snapshot_dir)
             print(f"[INFO] Saved visualiser snapshots to {snapshot_dir}")
-        writer.close()
+        runner.writer.close()
 
     open(os.path.join(log_dir, "DONE"), "w").close()
 
