@@ -44,6 +44,8 @@ def main():
     parser.add_argument("--disable_her", action="store_true", default=False)
     parser.add_argument("--run_name", type=str, default=None)
     parser.add_argument("--no_visualise", action="store_true", default=False)
+    parser.add_argument("--record", action="store_true", default=False,
+                        help="Save visualiser snapshots to <log_dir>/snapshots for replay later.")
     parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
 
@@ -88,15 +90,24 @@ def main():
 
     if not args.no_visualise:
         from n_dim.visualise import PolicyVisualiser, SACValueVisualiser, PPOValueVisualiser, BufferVisualiser
-        env._visualisers.append(PolicyVisualiser(runner, env))
+        env._visualisers.append(PolicyVisualiser(runner, env, record=args.record))
         if args.agent == "sac":
-            env._visualisers.append(SACValueVisualiser(runner, env))
-            env._visualisers.append(BufferVisualiser(runner, env))
+            env._visualisers.append(SACValueVisualiser(runner, env, record=args.record))
+            env._visualisers.append(BufferVisualiser(runner, env, record=args.record))
         else:
-            env._visualisers.append(PPOValueVisualiser(runner, env))
+            env._visualisers.append(PPOValueVisualiser(runner, env, record=args.record))
+    elif args.record:
+        print("[WARN] --record has no effect with --no_visualise (no visualisers active).")
 
-    runner.learn()
-    writer.close()
+    try:
+        runner.learn()
+    finally:
+        if args.record:
+            snapshot_dir = os.path.join(log_dir, "snapshots")
+            for v in env._visualisers:
+                v.save(snapshot_dir)
+            print(f"[INFO] Saved visualiser snapshots to {snapshot_dir}")
+        writer.close()
 
     open(os.path.join(log_dir, "DONE"), "w").close()
 

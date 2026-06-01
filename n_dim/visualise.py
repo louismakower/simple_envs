@@ -15,6 +15,7 @@ subplot per dimension.
 """
 
 import math
+import os
 
 import numpy as np
 import torch
@@ -29,11 +30,37 @@ GOALS_1D = [0.1, 0.9]
 FILL_VALUE = 0.5
 
 
+class _Recorder:
+    """Accumulates per-step snapshot dicts; writes one .npz on save()."""
+
+    def __init__(self):
+        self._snaps = []
+        self._steps = []
+
+    def add(self, step: int, snap):
+        if snap is None:
+            return
+        self._snaps.append(snap)
+        self._steps.append(step)
+
+    def save(self, path: str, meta: dict):
+        if not self._snaps:
+            return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        out = {}
+        for key in self._snaps[0].keys():
+            out[key] = np.stack([s[key] for s in self._snaps], axis=0)
+        out["steps"] = np.array(self._steps, dtype=np.int64)
+        out.update(meta)
+        np.savez_compressed(path, **out)
+
+
 class PolicyVisualiser:
     QUIVER_RES = 21
     MAGNIFY = 1.0
+    SNAPSHOT_NAME = "policy.npz"
 
-    def __init__(self, runner, env, update_every: int = 1):
+    def __init__(self, runner, env, update_every: int = 1, record: bool = False):
         self._runner = runner
         self._env = env
         self._n = env.n
@@ -41,6 +68,7 @@ class PolicyVisualiser:
         self._update_every = update_every
         self._step = 0
         self._device = env.device
+        self._recorder = _Recorder() if record else None
         self._setup_figure()
 
     def _setup_figure(self):
@@ -110,7 +138,7 @@ class PolicyVisualiser:
         full = torch.cat([first_two, rest])
         return full.expand(batch_size, self._n)
 
-    def update(self):
+    def _compute(self):
         res = self.QUIVER_RES
         axis = torch.linspace(0.0, 1.0, res, device=self._device)
         y_grid, x_grid = torch.meshgrid(axis, axis, indexing="ij")
@@ -118,7 +146,8 @@ class PolicyVisualiser:
         y_flat = y_grid.reshape(-1)
         states = self._build_states(x_flat, y_flat)
 
-        for quiver, goal in zip(self._quivers, self._goals):
+        uvs = []
+        for goal in self._goals:
             goals = self._build_goals(goal, states.shape[0])
             action = self._action(states, goals) * self._max_step_size
             action = (action * self.MAGNIFY).cpu().numpy()
@@ -128,10 +157,32 @@ class PolicyVisualiser:
             else:
                 u = action[:, 0].reshape(res, res)
                 v = action[:, 1].reshape(res, res)
-            quiver.set_UVC(u, v)
+            uvs.append(np.stack([u, v], axis=0))
+        return {"uv": np.stack(uvs, axis=0).astype(np.float32)}
 
+    def _draw(self, snap):
+        for quiver, uv in zip(self._quivers, snap["uv"]):
+            quiver.set_UVC(uv[0], uv[1])
         self._fig.canvas.draw_idle()
         self._fig.canvas.flush_events()
+
+    def update(self):
+        snap = self._compute()
+        if self._recorder is not None:
+            self._recorder.add(self._step, snap)
+        self._draw(snap)
+
+    def save(self, dir_path: str):
+        if self._recorder is None:
+            return
+        meta = {
+            "kind": np.array("policy"),
+            "n": np.int64(self._n),
+            "max_step_size": np.float32(self._max_step_size),
+            "quiver_res": np.int64(self.QUIVER_RES),
+            "goals": np.array(self._goals, dtype=np.float32),
+        }
+        self._recorder.save(os.path.join(dir_path, self.SNAPSHOT_NAME), meta)
 
 
 class _BaseValueVisualiser:
@@ -141,13 +192,16 @@ class _BaseValueVisualiser:
 
     _title = "Value vs distance to goal"
     _ylabel = "V"
+    _kind = "value"
+    SNAPSHOT_NAME = "value.npz"
 
-    def __init__(self, env, update_every: int = 20):
+    def __init__(self, env, update_every: int = 20, record: bool = False):
         self._env = env
         self._n = env.n
         self._update_every = update_every
         self._step = 0
         self._device = env.device
+        self._recorder = _Recorder() if record else None
         self._setup_figure()
 
     def _setup_figure(self):
@@ -174,27 +228,50 @@ class _BaseValueVisualiser:
         if self._step % self._update_every == 0:
             self.update()
 
-    def update(self):
+    def _compute(self):
         states = torch.rand(self.NUM_SAMPLES, self._n, device=self._device)
         goals = torch.rand(self.NUM_SAMPLES, self._n, device=self._device)
         dists = torch.norm(states - goals, dim=-1).cpu().numpy()
         values = self._value(states, goals).cpu().numpy()
+        return {
+            "dists": dists.astype(np.float32),
+            "values": values.astype(np.float32),
+        }
 
-        self._scatter.set_offsets(np.column_stack([dists, values]))
-        self._ax.set_ylim(float(values.min()), float(values.max()) + 1e-6)
-
+    def _draw(self, snap):
+        self._scatter.set_offsets(np.column_stack([snap["dists"], snap["values"]]))
+        self._ax.set_ylim(float(snap["values"].min()), float(snap["values"].max()) + 1e-6)
         self._fig.canvas.draw_idle()
         self._fig.canvas.flush_events()
+
+    def update(self):
+        snap = self._compute()
+        if self._recorder is not None:
+            self._recorder.add(self._step, snap)
+        self._draw(snap)
+
+    def save(self, dir_path: str):
+        if self._recorder is None:
+            return
+        meta = {
+            "kind": np.array(self._kind),
+            "n": np.int64(self._n),
+            "title": np.array(self._title),
+            "ylabel": np.array(self._ylabel),
+        }
+        self._recorder.save(os.path.join(dir_path, self.SNAPSHOT_NAME), meta)
 
 
 class SACValueVisualiser(_BaseValueVisualiser):
     NUM_ACTION_SAMPLES = 16
     _title = "SAC value vs distance to goal"
     _ylabel = "mean min(q1, q2) over sampled actions"
+    _kind = "sac_value"
+    SNAPSHOT_NAME = "sac_value.npz"
 
-    def __init__(self, runner, env, update_every: int = 20):
+    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
         self._sac = runner.runner
-        super().__init__(env, update_every)
+        super().__init__(env, update_every, record=record)
 
     @torch.no_grad()
     def _value(self, states, goals):
@@ -215,10 +292,12 @@ class SACValueVisualiser(_BaseValueVisualiser):
 class PPOValueVisualiser(_BaseValueVisualiser):
     _title = "PPO value vs distance to goal"
     _ylabel = "V"
+    _kind = "ppo_value"
+    SNAPSHOT_NAME = "ppo_value.npz"
 
-    def __init__(self, runner, env, update_every: int = 20):
+    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
         self._ppo = runner.runner
-        super().__init__(env, update_every)
+        super().__init__(env, update_every, record=record)
 
     @torch.no_grad()
     def _value(self, states, goals):
@@ -233,13 +312,15 @@ class BufferVisualiser:
 
     NUM_BINS = 25
     NUM_SAMPLES = 15_000
+    SNAPSHOT_NAME = "buffer.npz"
 
-    def __init__(self, runner, env, update_every: int = 20):
+    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
         self._buffer = runner.runner.buffer
         self._policy_obs_dim = runner.runner.policy_obs_dim
         self._n = env.n
         self._update_every = update_every
         self._step = 0
+        self._recorder = _Recorder() if record else None
         self._setup_figure()
 
     def _setup_figure(self):
@@ -293,11 +374,11 @@ class BufferVisualiser:
         if self._step % self._update_every == 0:
             self.update()
 
-    def update(self):
+    def _compute(self):
         buf = self._buffer
         filled = buf.capacity if buf.full else buf.idx
         if filled == 0:
-            return
+            return None
 
         n_samples = min(filled, self.NUM_SAMPLES)
         idx = torch.randint(0, filled, (n_samples,))
@@ -306,23 +387,52 @@ class BufferVisualiser:
         p = self._policy_obs_dim
         edges = np.linspace(0.0, 1.0, self.NUM_BINS + 1)
 
-        rew_vmin = -0.01
-        rew_vmax = 10 * self._n - 0.01
-
-        for k, (rim, cim) in enumerate(zip(self._reward_images, self._count_images)):
+        mean_rewards = []
+        counts_list = []
+        for k in range(self._n):
             state_k = obses[:, k]
             goal_k = obses[:, p + k]
-
             counts, _, _ = np.histogram2d(state_k, goal_k, bins=edges)
             reward_sum, _, _ = np.histogram2d(state_k, goal_k, bins=edges, weights=rewards)
             mean_reward = np.where(counts > 0, reward_sum / counts, np.nan)
+            mean_rewards.append(mean_reward)
+            counts_list.append(counts)
+        return {
+            "mean_reward": np.stack(mean_rewards, axis=0).astype(np.float32),
+            "counts": np.stack(counts_list, axis=0).astype(np.float32),
+        }
+
+    def _draw(self, snap):
+        rew_vmin = -0.01
+        rew_vmax = 10 * self._n - 0.01
+        for k, (rim, cim) in enumerate(zip(self._reward_images, self._count_images)):
+            mean_reward = snap["mean_reward"][k]
+            counts = snap["counts"][k]
 
             rim.set_data(mean_reward.T)
             rim.set_clim(vmin=rew_vmin, vmax=rew_vmax)
 
             count_grid = np.where(counts > 0, counts, np.nan)
             cim.set_data(count_grid.T)
-            cim.set_clim(vmin=0, vmax=counts.max())
+            cmax = counts.max() if counts.max() > 0 else 1.0
+            cim.set_clim(vmin=0, vmax=cmax)
 
         self._fig.canvas.draw_idle()
         self._fig.canvas.flush_events()
+
+    def update(self):
+        snap = self._compute()
+        if self._recorder is not None:
+            self._recorder.add(self._step, snap)
+        if snap is not None:
+            self._draw(snap)
+
+    def save(self, dir_path: str):
+        if self._recorder is None:
+            return
+        meta = {
+            "kind": np.array("buffer"),
+            "n": np.int64(self._n),
+            "num_bins": np.int64(self.NUM_BINS),
+        }
+        self._recorder.save(os.path.join(dir_path, self.SNAPSHOT_NAME), meta)
