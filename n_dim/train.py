@@ -81,7 +81,14 @@ def main():
 
     os.makedirs(log_dir, exist_ok=True)
     with open(os.path.join(log_dir, "cfg.json"), "w") as f:
-        json.dump(dataclasses.asdict(agent_cfg), f, indent=2)
+        json.dump(
+            {
+                "agent": dataclasses.asdict(agent_cfg),
+                "env": dataclasses.asdict(env_cfg),
+            },
+            f,
+            indent=2,
+        )
 
     runner = RLRunner(env=env, cfg=agent_cfg, log_dir=log_dir)
 
