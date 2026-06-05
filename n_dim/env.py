@@ -56,6 +56,7 @@ class NDimVecEnv:
         self.ep_counters += 1
 
         rew = self.compute_rew(next_state, self.goal)
+        dist_to_goal = _dist(next_state, self.goal).mean()
         term = self.compute_term(next_state)
         timeout = self.compute_timeout()
 
@@ -70,7 +71,10 @@ class NDimVecEnv:
         
         # reset fn returns all obs
         obs, _ = self.reset(env_ids=to_reset)
-        extras = {"terminal_obs": terminal_obs}
+        extras = {
+            "terminal_obs": terminal_obs,
+            "log": {"metrics/dist_to_goal": dist_to_goal},
+            }
 
         for visualiser in self._visualisers:
             visualiser.maybe_update()
@@ -121,6 +125,9 @@ class NDimVecEnv:
     def compute_timeout(self):
         return self.ep_counters >= self.max_ep_len
     
+    def randomise_ep_counters(self):
+        self.ep_counters = (torch.rand_like(self.ep_counters) * self.max_ep_len).long()
+    
     def _create_goals(self, num_goals=None):
         if num_goals is None:
             num_goals = self.num_envs
@@ -128,9 +135,9 @@ class NDimVecEnv:
 
     
 def reward_fn(state, goal, goal_radius, n):
-    reached = (_dist(state, goal) < goal_radius).float() * n
+    reached = (_dist(state, goal) < goal_radius).float()
     neg_step = -0.01
-    return 10 * reached + neg_step
+    return reached + neg_step
 
 def _dist(pos1, pos2):
     return torch.norm(

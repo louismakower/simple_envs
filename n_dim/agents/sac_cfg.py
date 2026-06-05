@@ -5,12 +5,12 @@ SAC_CFG = SACRunnerCfg(
     experiment_name="sac_nd",
 
     gamma=0.99,
-    alpha_init=0.2,
+    alpha_init=0.01,
     alpha_lr=3e-4,
     target_entropy="auto",
 
-    replay_buffer_size=10_000_000,
-    warmup_transitions=100_000,
+    replay_buffer_size=1_000_000,
+    warmup_transitions=200_000,
 
     q_hidden_dims=[32, 32],
     q_learning_rate=3e-4,
@@ -24,16 +24,16 @@ SAC_CFG = SACRunnerCfg(
 
     reward_scaling=True,
     reward_G_max=5.0,
-    reward_clip=0.0,
+    reward_clip=10.0,
+    reward_norm_type="ema",
+    reward_ema_param=0.999,
 
-    max_steps=200_000,
+    max_steps=8_000,
     steps_per_iter=1,
     num_train_updates=10,
     batch_size=1024,
 
     save_interval=600,
 
-    collect_states=False,
-
-    her_cfg=NDimHERCfg(mode="future"),
+    her_cfg=NDimHERCfg(mode="future", k=4),
 )

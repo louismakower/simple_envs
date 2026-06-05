@@ -269,7 +269,7 @@ class SACValueVisualiser(_BaseValueVisualiser):
     _kind = "sac_value"
     SNAPSHOT_NAME = "sac_value.npz"
 
-    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
+    def __init__(self, runner, env, update_every: int = 2, record: bool = False):
         self._sac = runner.runner
         super().__init__(env, update_every, record=record)
 
@@ -295,7 +295,7 @@ class PPOValueVisualiser(_BaseValueVisualiser):
     _kind = "ppo_value"
     SNAPSHOT_NAME = "ppo_value.npz"
 
-    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
+    def __init__(self, runner, env, update_every: int = 2, record: bool = False):
         self._ppo = runner.runner
         super().__init__(env, update_every, record=record)
 
@@ -404,7 +404,7 @@ class BufferVisualiser:
 
     def _draw(self, snap):
         rew_vmin = -0.01
-        rew_vmax = 10 * self._n - 0.01
+        rew_vmax = 1.
         for k, (rim, cim) in enumerate(zip(self._reward_images, self._count_images)):
             mean_reward = snap["mean_reward"][k]
             counts = snap["counts"][k]
