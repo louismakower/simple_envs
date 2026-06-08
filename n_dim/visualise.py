@@ -382,8 +382,8 @@ class BufferVisualiser:
 
         n_samples = min(filled, self.NUM_SAMPLES)
         idx = torch.randint(0, filled, (n_samples,))
-        obses = buf.obses[idx].cpu().numpy()
-        rewards = buf.rewards[idx].squeeze(-1).cpu().numpy()
+        obses = buf.obs[idx].cpu().numpy()
+        rewards = buf.rew[idx].squeeze(-1).cpu().numpy()
         p = self._policy_obs_dim
         edges = np.linspace(0.0, 1.0, self.NUM_BINS + 1)
 

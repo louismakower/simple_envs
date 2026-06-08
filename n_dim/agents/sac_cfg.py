@@ -1,4 +1,5 @@
 from louis_rl.sac import SACRunnerCfg
+from louis_rl.intrinsic import RNDCfg
 from n_dim.agents.her_cfg import NDimHERCfg
 
 SAC_CFG = SACRunnerCfg(
@@ -10,7 +11,7 @@ SAC_CFG = SACRunnerCfg(
     target_entropy="auto",
 
     replay_buffer_size=1_000_000,
-    warmup_transitions=200_000,
+    warmup_transitions=20_000,
 
     q_hidden_dims=[32, 32],
     q_learning_rate=3e-4,
@@ -36,4 +37,18 @@ SAC_CFG = SACRunnerCfg(
     save_interval=600,
 
     her_cfg=NDimHERCfg(mode="future", k=4),
+
+    use_rnd = True,
+    rnd_cfg=RNDCfg(
+        pred_shape=10,
+        target_hidden_layers=[10, 5],
+        predictor_hidden_layers=[5],
+        lr=3e-4,
+    ),
+    rnd_critic_hidden_layers=[16],
+    rnd_critic_lr=3e-6,
+    rnd_rew_clip=0.0,
+    rnd_rew_weight=1.0,
+    rnd_critic_tau=0.005,
+    rnd_gamma=0.99,
 )

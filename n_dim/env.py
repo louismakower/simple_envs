@@ -43,6 +43,7 @@ class NDimVecEnv:
         return {
             "policy": SpaceInfo(shape=(self.n,)),
             "goal": {"desired_goal": SpaceInfo(shape=(self.n,))},
+            "rnd": SpaceInfo(shape=(self.n,))
         }
     
     def step(self, action):
@@ -86,6 +87,7 @@ class NDimVecEnv:
             "policy": state.clone(),
             "goal": {"desired_goal": goal.clone()},
             "her": {"position": state.clone()},
+            "rnd": state.clone(),
         }
     
     def get_terminal_obs(self, state, goal, env_ids):
@@ -181,4 +183,4 @@ if __name__ == "__main__":
     plt.xlabel("steps since reset")
     plt.ylabel("position")
     plt.tight_layout()
-    plt.savefig("test.png")
+    plt.savefig("fig.png")

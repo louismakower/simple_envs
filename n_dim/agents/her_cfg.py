@@ -22,6 +22,7 @@ def get_her_goals(trajectories, extras):
     her_next_obs = trajectories["her_next_obs"]
     lengths = trajectories["lengths"]
     valid = trajectories["valid"]
+    rnd_obs = trajectories.get("rnd_obs")
 
     first_pos = her_obs["position"]  # (T, N, n)
     next_pos = her_next_obs["position"]
@@ -45,7 +46,7 @@ def get_her_goals(trajectories, extras):
     within = distances < goal_radius
     reward = reward_fn(flat_next_pos, flat_goal, goal_radius, n)
 
-    return {
+    return_traj = {
         "obs": obs.view(-1, obs.shape[2])[valid],
         "action": action.view(-1, action.shape[2])[valid],
         "reward": reward.unsqueeze(-1)[valid],
@@ -53,6 +54,12 @@ def get_her_goals(trajectories, extras):
         "done": within.unsqueeze(-1)[valid],
         "distances": distances[valid],
     }
+    if rnd_obs is not None:
+        return_traj.update({
+            "rnd_obs": rnd_obs.view(-1, rnd_obs.shape[-1])[valid],
+        })
+
+    return return_traj
 
 
 @dataclass
