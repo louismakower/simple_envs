@@ -44,6 +44,7 @@ SAC_CFG = SACRunnerCfg(
         target_hidden_layers=[10, 5],
         predictor_hidden_layers=[5],
         lr=3e-4,
+        obs_clip=5.0,
     ),
     rnd_critic_hidden_layers=[16],
     rnd_critic_lr=3e-6,
