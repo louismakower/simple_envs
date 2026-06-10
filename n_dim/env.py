@@ -1,5 +1,5 @@
 import torch
-from base_env import GoalReachVecEnv, reward_fn, _dist  # noqa: F401  (re-exported for HER)
+from base_env import GoalReachVecEnv, _dist
 from n_dim.env_cfg import NDimVecEnvCfg
 
 

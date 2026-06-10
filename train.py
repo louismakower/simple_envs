@@ -9,17 +9,18 @@ import numpy as np
 import torch
 
 from louis_rl.algorithm import RLRunner
-from n_dim import agents
+from n_dim import agents as n_dim_agents
 from n_dim.env import NDimVecEnv
 from n_dim.env_cfg import NDimVecEnvCfg
+from walls import agents as walls_agents
 from walls.env import WallsVecEnv
 from walls.env_cfg import WallsVecEnvCfg
 
 
-# task name -> (env class, env cfg class)
+# task name -> (env class, env cfg class, agents module)
 TASKS = {
-    "n_dim": (NDimVecEnv, NDimVecEnvCfg),
-    "walls": (WallsVecEnv, WallsVecEnvCfg),
+    "n_dim": (NDimVecEnv, NDimVecEnvCfg, n_dim_agents),
+    "walls": (WallsVecEnv, WallsVecEnvCfg, walls_agents),
 }
 
 
@@ -57,7 +58,22 @@ def build_visualisers(task, agent, runner, env, record):
             visualisers.append(PPOValueVisualiser(runner, env, record=record))
         return visualisers
 
-    # walls has no task-specific visualisers yet
+    if task == "walls":
+        from walls.visualise import (
+            WallsPolicyVisualiser, WallsSACValueVisualiser,
+            WallsPPOValueVisualiser, WallsBufferVisualiser,
+            WallsIntrinsicRewardVisualiser,
+        )
+        visualisers = [WallsPolicyVisualiser(runner, env, record=record)]
+        if agent == "sac":
+            visualisers.append(WallsSACValueVisualiser(runner, env, record=record))
+            visualisers.append(WallsBufferVisualiser(runner, env, record=record))
+            if getattr(runner.runner, "rnd", None) is not None:
+                visualisers.append(WallsIntrinsicRewardVisualiser(runner, env, record=record))
+        else:
+            visualisers.append(WallsPPOValueVisualiser(runner, env, record=record))
+        return visualisers
+
     print(f"[INFO] no visualisers for task '{task}'; training without them.")
     return []
 
@@ -109,7 +125,7 @@ def main():
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
 
-    env_cls, cfg_cls = TASKS[args.task]
+    env_cls, cfg_cls, agents = TASKS[args.task]
     env_cfg = dataclasses.replace(cfg_cls(), **build_env_overrides(args.task, args))
     env = env_cls(env_cfg, device=args.device)
 

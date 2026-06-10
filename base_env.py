@@ -160,7 +160,7 @@ class GoalReachVecEnv:
 
 def reward_fn(state, goal, goal_radius, n=None):
     reached = (_dist(state, goal) < goal_radius).float()
-    neg_step = -0.01
+    neg_step = torch.full_like(reached, -0.01)
     return reached + neg_step
 
 
