@@ -14,6 +14,7 @@ num_envs = 1024
 seeds = [42, 43, 44]
 
 LOG_DIR = "runs/sweep"
+TASK = "n_dim"
 
 
 def run_name(cond, n, seed):
@@ -21,7 +22,8 @@ def run_name(cond, n, seed):
 
 
 def log_path(cond, n, seed):
-    return os.path.join(LOG_DIR, run_name(cond, n, seed))
+    # train.py writes to <log_dir>/<task>/<run_name>; mirror that here.
+    return os.path.join(LOG_DIR, TASK, run_name(cond, n, seed))
 
 
 def run_training():
@@ -32,7 +34,8 @@ def run_training():
             continue
         print(f"[run]  {cond['label']} n={n} seed={seed}")
         cmd = [
-            sys.executable, "-m", "n_dim.train",
+            sys.executable, "-m", "train",
+            "--task", TASK,
             "--agent", cond["agent"],
             "--num_envs", str(num_envs),
             "--n", str(n),
