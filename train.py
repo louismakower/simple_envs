@@ -117,7 +117,7 @@ def main():
     parser.add_argument("--no_visualise", action="store_true", default=False)
     parser.add_argument("--record", action="store_true", default=False,
                         help="Save visualiser snapshots to <log_dir>/snapshots for replay later.")
-    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
     if args.seed is not None:

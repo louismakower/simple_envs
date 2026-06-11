@@ -263,7 +263,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=str, required=True,
                         help="Path to a model_X.pth checkpoint.")
-    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--delay", type=float, default=0.03,
                         help="Seconds to pause between animation frames.")
     parser.add_argument("--video", type=int, default=None, metavar="N",
