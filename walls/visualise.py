@@ -7,11 +7,19 @@ wall/hole geometry (cyan) and, where relevant, the pinned goal (star).
 `WallsPolicyVisualiser` — 1x3 quiver of the deterministic action over an
 (x, y) grid, one subplot per pinned goal y in `GOAL_YS` (all at x=1).
 
-`WallsSACValueVisualiser` / `WallsPPOValueVisualiser` — 1x3 heatmaps of the
-value over an (x, y) grid, one per pinned goal. SAC value is the mean of
-min(q1, q2) over sampled actions (same definition as the n_dim visualiser);
-PPO value is v(s, g). The colour scale is shared across the row so the three
-goals are directly comparable.
+`WallsPPOValueVisualiser` — 1x3 heatmaps of v(s, g) over an (x, y) grid, one
+per pinned goal, with the colour scale shared across the row so the three goals
+are directly comparable.
+
+`WallsSACValueVisualiser` — an (n_rows x 3) grid of value heatmaps: columns are
+the pinned goals, rows are value channels. With RND enabled there are three rows
+— extrinsic (mean min(q1, q2) over sampled actions), intrinsic (the intrinsic
+critic's value scaled by rnd_rew_weight, i.e. its actual contribution), and
+combined (extrinsic + intrinsic, what the policy maximises excluding the entropy
+term). Note the intrinsic value is large (~1/(1-rnd_gamma)): it is a non-episodic
+discounted sum of always-positive normalised novelty rewards. Without RND it
+collapses to the single extrinsic row. Each row has its own colour scale (shared
+across its three goals) since the channels live in different units.
 
 `WallsBufferVisualiser` (SAC-only) — 1x2 (x, y) histograms of replay-buffer
 transitions binned by state position: mean reward and transition count.
@@ -139,7 +147,15 @@ class WallsPolicyVisualiser(_GridMixin):
 
 
 class _WallsBaseValueVisualiser(_GridMixin):
-    """Value heatmap over (x, y) per pinned goal. Subclasses implement `_value`."""
+    """Value heatmaps over (x, y) per pinned goal, one row per value channel.
+
+    Subclasses set `self._row_labels` (one label per row) before calling
+    super().__init__ and implement `_value_rows`, which returns one flat
+    (res*res,) numpy array per row. The figure is an (n_rows x 3) grid: columns
+    are the pinned goals, rows are value channels. Each row gets its own colour
+    scale (shared across its three goals) and its own colorbar, since different
+    channels live in different units.
+    """
 
     VALUE_RES = 50
     _title = "Value"
@@ -151,13 +167,16 @@ class _WallsBaseValueVisualiser(_GridMixin):
         self._wall_x = env.wall_x.cpu().numpy()
         self._hole_lo = env.hole_lo.cpu().numpy()
         self._hole_hi = env.hole_hi.cpu().numpy()
+        self._n_rows = len(self._row_labels)
         self._build_grid(self.VALUE_RES)
         self._setup_figure()
 
     def _setup_figure(self):
         plt.ion()
-        self._fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-        self._axes = list(np.atleast_1d(axes).ravel())
+        n_rows = self._n_rows
+        self._fig, axes = plt.subplots(
+            n_rows, 3, figsize=(16, 5 * n_rows), squeeze=False,
+        )
         try:
             self._fig.canvas.manager.set_window_title(self._title)
         except Exception:
@@ -165,26 +184,39 @@ class _WallsBaseValueVisualiser(_GridMixin):
 
         res = self.VALUE_RES
         empty = np.zeros((res, res))
+        # self._images[r][c] is the image for row r (value channel), column c (goal).
         self._images = []
-        for ax, gy in zip(self._axes, GOAL_YS):
-            im = ax.imshow(
-                empty, origin="lower", extent=[0, 1, 0, 1],
-                aspect="equal", interpolation="nearest", cmap="viridis",
+        for r in range(n_rows):
+            row_images = []
+            for c, gy in enumerate(GOAL_YS):
+                ax = axes[r][c]
+                im = ax.imshow(
+                    empty, origin="lower", extent=[0, 1, 0, 1],
+                    aspect="equal", interpolation="nearest", cmap="viridis",
+                )
+                row_images.append(im)
+                _draw_walls(ax, self._wall_x, self._hole_lo, self._hole_hi)
+                _mark_goal(ax, gy)
+                ax.set_xlim(0.0, 1.0)
+                ax.set_ylim(0.0, 1.0)
+                if r == 0:
+                    ax.set_title(f"goal y = {gy}")
+                if r == n_rows - 1:
+                    ax.set_xlabel("x")
+                if c == 0:
+                    ax.set_ylabel(f"{self._row_labels[r]}\ny")
+            # one colorbar per row, labelled with the channel.
+            self._fig.colorbar(
+                row_images[-1], ax=list(axes[r]), label=self._row_labels[r],
             )
-            self._images.append(im)
-            _draw_walls(ax, self._wall_x, self._hole_lo, self._hole_hi)
-            _mark_goal(ax, gy)
-            ax.set_xlim(0.0, 1.0)
-            ax.set_ylim(0.0, 1.0)
-            ax.set_title(f"goal y = {gy}")
-            ax.set_xlabel("x")
-            ax.set_ylabel("y")
-        self._fig.colorbar(self._images[-1], ax=self._axes, label="value")
+            self._images.append(row_images)
+
         self._fig.suptitle(self._title)
         self._fig.show()
 
     @torch.no_grad()
-    def _value(self, states, goals):
+    def _value_rows(self, states, goals):
+        """Return `n_rows` flat (res*res,) numpy arrays, one per value channel."""
         raise NotImplementedError
 
     def maybe_update(self):
@@ -194,17 +226,21 @@ class _WallsBaseValueVisualiser(_GridMixin):
 
     def update(self):
         res = self.VALUE_RES
-        grids = []
+        # grids[r][c] = (res, res) array for row r (channel), column c (goal).
+        grids = [[] for _ in range(self._n_rows)]
         for gy in GOAL_YS:
-            v = self._value(self._states, self._goal_tensor(gy)).cpu().numpy()
-            grids.append(v.reshape(res, res))
-        vmin = min(g.min() for g in grids)
-        vmax = max(g.max() for g in grids)
-        if vmax - vmin < 1e-6:
-            vmax = vmin + 1e-6
-        for im, grid in zip(self._images, grids):
-            im.set_data(grid)
-            im.set_clim(vmin=vmin, vmax=vmax)
+            rows = self._value_rows(self._states, self._goal_tensor(gy))
+            for r, v in enumerate(rows):
+                grids[r].append(np.asarray(v).reshape(res, res))
+        for r in range(self._n_rows):
+            row = grids[r]
+            vmin = min(g.min() for g in row)
+            vmax = max(g.max() for g in row)
+            if vmax - vmin < 1e-6:
+                vmax = vmin + 1e-6
+            for im, grid in zip(self._images[r], row):
+                im.set_data(grid)
+                im.set_clim(vmin=vmin, vmax=vmax)
         self._fig.canvas.draw_idle()
         self._fig.canvas.flush_events()
 
@@ -290,26 +326,45 @@ class WallsIntrinsicRewardVisualiser(_GridMixin):
 
 class WallsSACValueVisualiser(_WallsBaseValueVisualiser):
     NUM_ACTION_SAMPLES = 16
-    _title = "SAC value — mean min(q1, q2) over sampled actions"
+    _title = "SAC value — extrinsic / intrinsic / combined (mean over sampled actions)"
 
     def __init__(self, runner, env, update_every: int = 2, record: bool = False):
         self._sac = runner.runner
+        self._has_rnd = self._sac.rnd is not None
+        # With RND there are three channels; without it only the extrinsic value.
+        self._row_labels = (
+            ["extrinsic", "intrinsic", "combined"] if self._has_rnd else ["extrinsic"]
+        )
         super().__init__(env, update_every, record=record)
 
     @torch.no_grad()
-    def _value(self, states, goals):
+    def _value_rows(self, states, goals):
         sac = self._sac
         sac._set_eval()
         obs = {"policy": states, "goal": {"desired_goal": goals}}
         obs_n = sac.obs_norm(sac.add_goal_obs(obs))
         dist = sac.policy.dist(obs_n)
-        v = torch.zeros(obs_n.shape[0], 1, device=self._device)
+        n = obs_n.shape[0]
+        ext = torch.zeros(n, 1, device=self._device)
+        intr = torch.zeros(n, 1, device=self._device)
         for _ in range(self.NUM_ACTION_SAMPLES):
             act = dist.sample()
             q_input = sac._q_input(obs_n, act)
-            q = torch.minimum(sac.q1.network(q_input), sac.q2.network(q_input))
-            v += q
-        return (v / self.NUM_ACTION_SAMPLES).squeeze(-1)
+            ext += torch.minimum(sac.q1.network(q_input), sac.q2.network(q_input))
+            if self._has_rnd:
+                intr += sac.intrinsic_critic.network(q_input)
+        ext /= self.NUM_ACTION_SAMPLES
+        if not self._has_rnd:
+            return [ext.squeeze(-1).cpu().numpy()]
+        # Scale by rnd_rew_weight so the row is the intrinsic critic's *actual*
+        # contribution to the policy objective; then combined = extrinsic + intrinsic.
+        intr = sac.cfg.rnd_rew_weight * (intr / self.NUM_ACTION_SAMPLES)
+        combined = ext + intr
+        return [
+            ext.squeeze(-1).cpu().numpy(),
+            intr.squeeze(-1).cpu().numpy(),
+            combined.squeeze(-1).cpu().numpy(),
+        ]
 
 
 class WallsPPOValueVisualiser(_WallsBaseValueVisualiser):
@@ -317,14 +372,16 @@ class WallsPPOValueVisualiser(_WallsBaseValueVisualiser):
 
     def __init__(self, runner, env, update_every: int = 2, record: bool = False):
         self._ppo = runner.runner
+        self._row_labels = ["value"]
         super().__init__(env, update_every, record=record)
 
     @torch.no_grad()
-    def _value(self, states, goals):
+    def _value_rows(self, states, goals):
         ppo = self._ppo
         ppo.v.eval()
         obs = {"policy": states, "goal": {"desired_goal": goals}}
-        return ppo.v(ppo.add_goal_obs(obs)).squeeze(-1)
+        v = ppo.v(ppo.add_goal_obs(obs)).squeeze(-1)
+        return [v.cpu().numpy()]
 
 
 class WallsBufferVisualiser:
