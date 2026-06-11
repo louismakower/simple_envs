@@ -68,7 +68,7 @@ class WallsVecEnv(GoalReachVecEnv):
         wx = self.wall_x.unsqueeze(0)  # (1, W)
 
         dx = x1 - x0
-        crossed = (x0 - wx) * (x1 - wx) < 0  # (N, W) strict sign change
+        crossed = (x0 - wx) * (x1 - wx) <= 0  # (N, W) sign change, incl. landing exactly on wall
 
         safe_dx = torch.where(dx.abs() < 1e-12, torch.ones_like(dx), dx)
         t = (wx - x0) / safe_dx
