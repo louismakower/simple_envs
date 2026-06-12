@@ -1,4 +1,5 @@
 from louis_rl.ppo import PPORunnerCfg
+from louis_rl.intrinsic import RNDCfg
 
 PPO_CFG = PPORunnerCfg(
     experiment_name="ppo_nd",
@@ -10,7 +11,22 @@ PPO_CFG = PPORunnerCfg(
     v_lr=3e-4,
     gamma=0.99,
     eps=0.2,
-    save_interval=200,
-    policy_hidden_dims=[16],
-    v_hidden_dims=[16],
+    save_interval=50,
+    policy_hidden_dims=[64, 64],
+    v_hidden_dims=[64, 64],
+
+    rnd=None,
+    # rnd=RNDCfg(
+    #     pred_dim=5,
+    #     target_hidden_layers=[10],
+    #     predictor_hidden_layers=[15],
+    #     lr=3e-4,
+    #     obs_clip=0.0,
+    #     use_frac=0.25
+    # ),
+    rnd_gamma=0.999,
+    rnd_v_grad_steps=10,
+    rnd_V_hidden_layers=[128, 128],
+    rnd_V_lr=3e-4,
+    rnd_weight=1.0
 )

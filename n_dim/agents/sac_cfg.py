@@ -40,7 +40,7 @@ SAC_CFG = SACRunnerCfg(
 
     use_rnd = False,
     rnd_cfg=RNDCfg(
-        pred_shape=10,
+        pred_dim=10,
         target_hidden_layers=[10, 5],
         predictor_hidden_layers=[5],
         lr=3e-4,
@@ -53,4 +53,5 @@ SAC_CFG = SACRunnerCfg(
     rnd_rew_weight=1.0,
     rnd_critic_tau=0.005,
     rnd_gamma=0.99,
+    rnd_G_max=5.0,
 )

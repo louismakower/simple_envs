@@ -62,7 +62,7 @@ def build_visualisers(task, agent, runner, env, record):
         from walls.visualise import (
             WallsPolicyVisualiser, WallsSACValueVisualiser,
             WallsPPOValueVisualiser, WallsBufferVisualiser,
-            WallsIntrinsicRewardVisualiser,
+            WallsIntrinsicRewardVisualiser, WallsPPOIntrinsicValueVisualiser,
         )
         visualisers = [WallsPolicyVisualiser(runner, env, record=record)]
         if agent == "sac":
@@ -72,6 +72,9 @@ def build_visualisers(task, agent, runner, env, record):
                 visualisers.append(WallsIntrinsicRewardVisualiser(runner, env, record=record))
         else:
             visualisers.append(WallsPPOValueVisualiser(runner, env, record=record))
+            if getattr(runner.runner, "rnd", None) is not None:
+                visualisers.append(WallsIntrinsicRewardVisualiser(runner, env, record=record))
+                visualisers.append(WallsPPOIntrinsicValueVisualiser(runner, env, record=record))
         return visualisers
 
     print(f"[INFO] no visualisers for task '{task}'; training without them.")

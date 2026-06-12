@@ -11,6 +11,9 @@ wall/hole geometry (cyan) and, where relevant, the pinned goal (star).
 per pinned goal, with the colour scale shared across the row so the three goals
 are directly comparable.
 
+`WallsPPOIntrinsicValueVisualiser` — 1x3 heatmaps of the intrinsic value
+V_intr(s, g) over an (x, y) grid, one per pinned goal. Requires PPO with RND.
+
 `WallsSACValueVisualiser` — an (n_rows x 3) grid of value heatmaps: columns are
 the pinned goals, rows are value channels. With RND enabled there are three rows
 — extrinsic (mean min(q1, q2) over sampled actions), intrinsic (the intrinsic
@@ -77,6 +80,7 @@ class _GridMixin:
 class WallsPolicyVisualiser(_GridMixin):
     QUIVER_RES = 21
     MAGNIFY = 1.0
+    ARROW_LENGTH = 0.04  # fixed display length; normalise so direction is always legible
 
     def __init__(self, runner, env, update_every: int = 1, record: bool = False):
         self._runner = runner
@@ -134,8 +138,9 @@ class WallsPolicyVisualiser(_GridMixin):
     def update(self):
         res = self.QUIVER_RES
         for quiver, gy in zip(self._quivers, GOAL_YS):
-            action = self._action(self._goal_tensor(gy)) * self._max_step_size
-            action = (action * self.MAGNIFY).cpu().numpy()
+            action = self._action(self._goal_tensor(gy)).cpu().numpy()
+            norms = np.linalg.norm(action, axis=-1, keepdims=True).clip(min=1e-8)
+            action = action / norms * self.ARROW_LENGTH * self.MAGNIFY
             u = action[:, 0].reshape(res, res)
             v = action[:, 1].reshape(res, res)
             quiver.set_UVC(u, v)
@@ -252,9 +257,9 @@ class WallsIntrinsicRewardVisualiser(_GridMixin):
     """(x, y) heatmap of the RND intrinsic reward (predictor-vs-target error).
 
     The RND observation is the agent position, so the intrinsic reward is a pure
-    function of (x, y) — goal-independent, so a single heatmap suffices. SAC-only
-    and requires the runner to have RND enabled (use_rnd=True). The reward is the
-    raw prediction error; the agent's reward normaliser only rescales it by a
+    function of (x, y) — goal-independent, so a single heatmap suffices. Works for
+    both SAC and PPO runners; requires RND to be enabled (rnd != None). The reward
+    is the raw prediction error; the agent's reward normaliser only rescales it by a
     global std, which leaves the spatial pattern (and hence this map) unchanged.
     """
 
@@ -322,6 +327,33 @@ class WallsIntrinsicRewardVisualiser(_GridMixin):
 
     def save(self, dir_path: str):
         pass
+
+
+class WallsPPOIntrinsicValueVisualiser(_WallsBaseValueVisualiser):
+    """(x, y) heatmaps of PPO's intrinsic value network (V_intr(s, g)).
+
+    The intrinsic value network takes the full observation (state + goal), so
+    one column per pinned goal is shown, matching WallsPPOValueVisualiser.
+    Requires PPO with RND enabled (intrinsic_V != None).
+    """
+
+    _title = "PPO intrinsic value — V_intr(s, g)"
+
+    def __init__(self, runner, env, update_every: int = 2, record: bool = False):
+        self._ppo = runner.runner
+        if self._ppo.intrinsic_V is None:
+            raise ValueError(
+                "WallsPPOIntrinsicValueVisualiser requires PPO with RND enabled"
+            )
+        self._row_labels = ["intrinsic value"]
+        super().__init__(env, update_every, record=record)
+
+    @torch.no_grad()
+    def _value_rows(self, states, goals):
+        self._ppo.intrinsic_V.eval()
+        obs = {"policy": states, "goal": {"desired_goal": goals}}
+        v = self._ppo.intrinsic_V(self._ppo.add_goal_obs(obs)).squeeze(-1)
+        return [v.cpu().numpy()]
 
 
 class WallsSACValueVisualiser(_WallsBaseValueVisualiser):
