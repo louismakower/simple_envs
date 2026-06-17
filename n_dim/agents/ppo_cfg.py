@@ -15,18 +15,18 @@ PPO_CFG = PPORunnerCfg(
     policy_hidden_dims=[64, 64],
     v_hidden_dims=[64, 64],
 
-    rnd=None,
-    # rnd=RNDCfg(
-    #     pred_dim=5,
-    #     target_hidden_layers=[10],
-    #     predictor_hidden_layers=[15],
-    #     lr=3e-4,
-    #     obs_clip=0.0,
-    #     use_frac=0.25
-    # ),
-    rnd_gamma=0.999,
-    rnd_v_grad_steps=10,
-    rnd_V_hidden_layers=[128, 128],
-    rnd_V_lr=3e-4,
-    rnd_weight=1.0
+    # rnd=None,
+    intrinsic=RNDCfg(
+        pred_dim=5,
+        target_hidden_layers=[10],
+        predictor_hidden_layers=[15],
+        lr=3e-4,
+        obs_clip=0.0,
+        use_frac=0.25
+    ),
+    intrinsic_gamma=0.999,
+    intrinsic_v_grad_steps=10,
+    intrinsic_V_hidden_layers=[128, 128],
+    intrinsic_V_lr=3e-4,
+    intrinsic_weight=1.0
 )

@@ -38,8 +38,8 @@ SAC_CFG = SACRunnerCfg(
 
     her_cfg=NDimHERCfg(mode="future", k=4),
 
-    use_rnd = False,
-    rnd_cfg=RNDCfg(
+    use_intrinsic = False,
+    intrinsic_cfg=RNDCfg(
         pred_dim=10,
         target_hidden_layers=[10, 5],
         predictor_hidden_layers=[5],
@@ -47,11 +47,11 @@ SAC_CFG = SACRunnerCfg(
         obs_clip=5.0,
         use_frac=0.25,
     ),
-    rnd_critic_hidden_layers=[16],
-    rnd_critic_lr=3e-6,
-    rnd_rew_clip=0.0,
-    rnd_rew_weight=1.0,
-    rnd_critic_tau=0.005,
-    rnd_gamma=0.99,
-    rnd_G_max=5.0,
+    intrinsic_critic_hidden_layers=[16],
+    intrinsic_critic_lr=3e-6,
+    intrinsic_rew_clip=0.0,
+    intrinsic_rew_weight=1.0,
+    intrinsic_critic_tau=0.005,
+    intrinsic_gamma=0.99,
+    intrinsic_G_max=5.0,
 )
