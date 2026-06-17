@@ -140,7 +140,7 @@ class GoalReachVecEnv:
         return self.ep_counters >= self.max_ep_len
 
     def randomise_ep_counters(self):
-        self.ep_counters = (torch.rand_like(self.ep_counters) * self.max_ep_len).long()
+        self.ep_counters = (torch.rand(self.num_envs, device=self._device) * self.max_ep_len).long()
 
     # --- hooks ---------------------------------------------------------------
 
