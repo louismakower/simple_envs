@@ -15,9 +15,11 @@ import os
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize, LinearSegmentedColormap
 from matplotlib.widgets import Slider
 
 from n_dim.plot_sweep import read_scalar
+from n_dim.visualise import OVERSHOOT_MAX
 
 
 # ---------------------------------------------------------------------------
@@ -40,6 +42,7 @@ def render_policy(data):
     res = int(data["quiver_res"])
     goals = data["goals"]
     uvs = data["uv"]
+    cs = data["c"] if "c" in data.files else None
     steps = data["steps"]
 
     if n == 1:
@@ -54,12 +57,18 @@ def render_policy(data):
     except Exception:
         pass
 
+    cmap = LinearSegmentedColormap.from_list("bkrd", ["black", "red"])
+    norm = Normalize(vmin=1, vmax=OVERSHOOT_MAX, clip=True)
+
     axis_vals = np.linspace(0.0, 1.0, res)
     X, Y = np.meshgrid(axis_vals, axis_vals)
+    zero = np.zeros((res, res))
     quivers = []
-    for ax, goal, uv in zip(axes, goal_labels, uvs[0]):
+    for i, (ax, goal, uv) in enumerate(zip(axes, goal_labels, uvs[0])):
+        c0 = cs[0, i] if cs is not None else zero
         q = ax.quiver(
-            X, Y, uv[0], uv[1],
+            X, Y, uv[0], uv[1], c0,
+            cmap=cmap, norm=norm,
             angles="xy", scale_units="xy", scale=1.0, width=0.004,
         )
         quivers.append(q)
@@ -70,6 +79,7 @@ def render_policy(data):
         ax.set_xlabel("state dim 0")
         ax.set_ylabel("state dim 1" if n >= 2 else "(padded)")
 
+    fig.colorbar(quivers[0], ax=axes, label="action magnitude", ticks=[1, 2, OVERSHOOT_MAX])
     title = fig.suptitle(f"Policy (replay) — step {int(steps[0])}")
     fig.tight_layout()
 
@@ -82,7 +92,8 @@ def render_policy(data):
         last_idx[0] = t
         for k, q in enumerate(quivers):
             uv = uvs[t, k]
-            q.set_UVC(uv[0], uv[1])
+            c = cs[t, k] if cs is not None else None
+            q.set_UVC(uv[0], uv[1], c)
         title.set_text(f"Policy (replay) — step {int(steps[t])}")
         fig.canvas.draw_idle()
 

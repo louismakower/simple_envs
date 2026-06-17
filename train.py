@@ -68,11 +68,11 @@ def build_visualisers(task, agent, runner, env, record):
         if agent == "sac":
             visualisers.append(WallsSACValueVisualiser(runner, env, record=record))
             visualisers.append(WallsBufferVisualiser(runner, env, record=record))
-            if getattr(runner.runner, "rnd", None) is not None:
+            if getattr(runner.runner, "intrinsic", None) is not None:
                 visualisers.append(WallsIntrinsicRewardVisualiser(runner, env, record=record))
         else:
             visualisers.append(WallsPPOValueVisualiser(runner, env, record=record))
-            if getattr(runner.runner, "rnd", None) is not None:
+            if getattr(runner.runner, "intrinsic", None) is not None:
                 visualisers.append(WallsIntrinsicRewardVisualiser(runner, env, record=record))
                 visualisers.append(WallsPPOIntrinsicValueVisualiser(runner, env, record=record))
         return visualisers

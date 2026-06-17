@@ -20,6 +20,7 @@ import os
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize, LinearSegmentedColormap
 
 
 # First-2-dim goal corners (permutations of (0.1, 0.9)). Other dims = 0.5.
@@ -28,6 +29,8 @@ GOALS = [(0.1, 0.1), (0.1, 0.9), (0.9, 0.1), (0.9, 0.9)]
 GOALS_1D = [0.1, 0.9]
 # Pinned value for non-plotted state/goal dimensions (n >= 3).
 FILL_VALUE = 0.5
+# Action magnitude at which the policy quiver saturates to full red.
+OVERSHOOT_MAX = 3.0
 
 
 class _Recorder:
@@ -57,7 +60,6 @@ class _Recorder:
 
 class PolicyVisualiser:
     QUIVER_RES = 21
-    MAGNIFY = 1.0
     SNAPSHOT_NAME = "policy.npz"
 
     def __init__(self, runner, env, update_every: int = 1, record: bool = False):
@@ -74,16 +76,19 @@ class PolicyVisualiser:
     def _setup_figure(self):
         plt.ion()
         if self._n == 1:
-            self._fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+            self._fig, axes = plt.subplots(1, 2, figsize=(10, 5), layout="constrained")
             self._goals = GOALS_1D
         else:
-            self._fig, axes = plt.subplots(2, 2, figsize=(10, 9))
+            self._fig, axes = plt.subplots(2, 2, figsize=(10, 9), layout="constrained")
             self._goals = GOALS
         self._axes = list(np.atleast_1d(axes).ravel())
         try:
             self._fig.canvas.manager.set_window_title("Policy (first 2 dims)")
         except Exception:
             pass
+
+        self._cmap = LinearSegmentedColormap.from_list("bkrd", ["black", "red"])
+        self._norm = Normalize(vmin=1, vmax=OVERSHOOT_MAX, clip=True)
 
         res = self.QUIVER_RES
         axis = np.linspace(0.0, 1.0, res)
@@ -92,7 +97,8 @@ class PolicyVisualiser:
         self._quivers = []
         for ax, goal in zip(self._axes, self._goals):
             q = ax.quiver(
-                self._X, self._Y, zero, zero,
+                self._X, self._Y, zero, zero, zero,
+                cmap=self._cmap, norm=self._norm,
                 angles="xy", scale_units="xy", scale=1.0, width=0.004,
             )
             self._quivers.append(q)
@@ -103,8 +109,11 @@ class PolicyVisualiser:
             ax.set_xlabel("state dim 0")
             ax.set_ylabel("state dim 1" if self._n >= 2 else "(padded)")
 
+        self._fig.colorbar(
+            self._quivers[0], ax=self._axes,
+            label="action magnitude", ticks=[1, 2, OVERSHOOT_MAX],
+        )
         self._fig.suptitle("Policy: deterministic action (first 2 dims)")
-        self._fig.tight_layout()
         self._fig.show()
 
     @torch.no_grad()
@@ -147,22 +156,28 @@ class PolicyVisualiser:
         states = self._build_states(x_flat, y_flat)
 
         uvs = []
+        cs = []
         for goal in self._goals:
             goals = self._build_goals(goal, states.shape[0])
-            action = self._action(states, goals) * self._max_step_size
-            action = (action * self.MAGNIFY).cpu().numpy()
+            action = self._action(states, goals).cpu().numpy()  # (res*res, act_dim)
+            magnitudes = np.linalg.norm(action, axis=-1)  # (res*res,)
+            scale = np.minimum(magnitudes, 1.0) / magnitudes.clip(min=1e-8) * self._max_step_size
             if self._n == 1:
-                u = action[:, 0].reshape(res, res)
+                u = (action[:, 0] * scale).reshape(res, res)
                 v = np.zeros_like(u)
             else:
-                u = action[:, 0].reshape(res, res)
-                v = action[:, 1].reshape(res, res)
+                u = (action[:, 0] * scale).reshape(res, res)
+                v = (action[:, 1] * scale).reshape(res, res)
             uvs.append(np.stack([u, v], axis=0))
-        return {"uv": np.stack(uvs, axis=0).astype(np.float32)}
+            cs.append(magnitudes.reshape(res, res))
+        return {
+            "uv": np.stack(uvs, axis=0).astype(np.float32),
+            "c": np.stack(cs, axis=0).astype(np.float32),
+        }
 
     def _draw(self, snap):
-        for quiver, uv in zip(self._quivers, snap["uv"]):
-            quiver.set_UVC(uv[0], uv[1])
+        for quiver, uv, c in zip(self._quivers, snap["uv"], snap["c"]):
+            quiver.set_UVC(uv[0], uv[1], c)
         self._fig.canvas.draw_idle()
         self._fig.canvas.flush_events()
 

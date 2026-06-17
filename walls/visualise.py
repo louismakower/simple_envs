@@ -39,11 +39,14 @@ visualisers but ignored, and `save()` is a no-op.
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize, LinearSegmentedColormap
 
 
 # Goals are pinned to the right edge (x=1); these are the y positions shown.
 GOAL_YS = (0.1, 0.5, 0.9)
 GOAL_X = 1.0
+# Action magnitude at which the policy quiver saturates to full red.
+OVERSHOOT_MAX = 3.0
 
 
 def _draw_walls(ax, wall_x, hole_lo, hole_hi, color="cyan", lw=2):
@@ -79,8 +82,6 @@ class _GridMixin:
 
 class WallsPolicyVisualiser(_GridMixin):
     QUIVER_RES = 21
-    MAGNIFY = 1.0
-    ARROW_LENGTH = 0.04  # fixed display length; normalise so direction is always legible
 
     def __init__(self, runner, env, update_every: int = 1, record: bool = False):
         self._runner = runner
@@ -96,19 +97,23 @@ class WallsPolicyVisualiser(_GridMixin):
 
     def _setup_figure(self):
         plt.ion()
-        self._fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        self._fig, axes = plt.subplots(1, 3, figsize=(15, 5), layout="constrained")
         self._axes = list(np.atleast_1d(axes).ravel())
         try:
             self._fig.canvas.manager.set_window_title("Walls policy")
         except Exception:
             pass
 
+        self._cmap = LinearSegmentedColormap.from_list("bkrd", ["black", "red"])
+        self._norm = Normalize(vmin=1, vmax=OVERSHOOT_MAX, clip=True)
+
         res = self.QUIVER_RES
         zero = np.zeros((res, res))
         self._quivers = []
         for ax, gy in zip(self._axes, GOAL_YS):
             q = ax.quiver(
-                self._X, self._Y, zero, zero,
+                self._X, self._Y, zero, zero, zero,
+                cmap=self._cmap, norm=self._norm,
                 angles="xy", scale_units="xy", scale=1.0, width=0.004,
             )
             self._quivers.append(q)
@@ -121,8 +126,11 @@ class WallsPolicyVisualiser(_GridMixin):
             ax.set_xlabel("x")
             ax.set_ylabel("y")
 
+        self._fig.colorbar(
+            self._quivers[0], ax=self._axes,
+            label="action magnitude", ticks=[1, 2, OVERSHOOT_MAX],
+        )
         self._fig.suptitle("Policy: deterministic action")
-        self._fig.tight_layout()
         self._fig.show()
 
     @torch.no_grad()
@@ -139,11 +147,12 @@ class WallsPolicyVisualiser(_GridMixin):
         res = self.QUIVER_RES
         for quiver, gy in zip(self._quivers, GOAL_YS):
             action = self._action(self._goal_tensor(gy)).cpu().numpy()
-            norms = np.linalg.norm(action, axis=-1, keepdims=True).clip(min=1e-8)
-            action = action / norms * self.ARROW_LENGTH * self.MAGNIFY
-            u = action[:, 0].reshape(res, res)
-            v = action[:, 1].reshape(res, res)
-            quiver.set_UVC(u, v)
+            magnitudes = np.linalg.norm(action, axis=-1)  # (res*res,)
+            scale = np.minimum(magnitudes, 1.0) / magnitudes.clip(min=1e-8) * self._max_step_size
+            u = (action[:, 0] * scale).reshape(res, res)
+            v = (action[:, 1] * scale).reshape(res, res)
+            c = magnitudes.reshape(res, res)
+            quiver.set_UVC(u, v, c)
         self._fig.canvas.draw_idle()
         self._fig.canvas.flush_events()
 
@@ -254,74 +263,104 @@ class _WallsBaseValueVisualiser(_GridMixin):
 
 
 class WallsIntrinsicRewardVisualiser(_GridMixin):
-    """(x, y) heatmap of the RND intrinsic reward (predictor-vs-target error).
+    """1x2 figure: RND intrinsic reward (left) and cumulative state visitation count (right).
 
-    The RND observation is the agent position, so the intrinsic reward is a pure
-    function of (x, y) — goal-independent, so a single heatmap suffices. Works for
-    both SAC and PPO runners; requires RND to be enabled (rnd != None). The reward
-    is the raw prediction error; the agent's reward normaliser only rescales it by a
-    global std, which leaves the spatial pattern (and hence this map) unchanged.
+    The RND observation is the agent position, so both panels are goal-independent
+    and one map each suffices. Works for both SAC and PPO runners; requires RND to
+    be enabled (rnd != None).
+
+    State counts are accumulated on every env step (not throttled by update_every)
+    so the visitation map is always up to date when redrawn.
     """
 
     REWARD_RES = 80
     _title = "RND intrinsic reward — predictor error"
 
     def __init__(self, runner, env, update_every: int = 2, record: bool = False):
-        self._rnd = runner.runner.rnd
-        if self._rnd is None:
+        self._intrinsic = runner.runner.intrinsic
+        if self._intrinsic is None:
             raise ValueError(
                 "WallsIntrinsicRewardVisualiser requires RND (use_rnd=True)"
             )
         self._update_every = update_every
         self._step = 0
         self._device = env.device
+        self._env = env
         self._wall_x = env.wall_x.cpu().numpy()
         self._hole_lo = env.hole_lo.cpu().numpy()
         self._hole_hi = env.hole_hi.cpu().numpy()
+        self._count_grid = np.zeros((self.REWARD_RES, self.REWARD_RES))
         self._build_grid(self.REWARD_RES)
         self._setup_figure()
 
     def _setup_figure(self):
         plt.ion()
-        self._fig, self._ax = plt.subplots(figsize=(6.5, 5.5))
+        self._fig, (self._rew_ax, self._cnt_ax) = plt.subplots(1, 2, figsize=(13, 5.5))
         try:
             self._fig.canvas.manager.set_window_title("Walls intrinsic reward")
         except Exception:
             pass
 
         empty = np.zeros((self.REWARD_RES, self.REWARD_RES))
-        self._im = self._ax.imshow(
+        self._rew_im = self._rew_ax.imshow(
             empty, origin="lower", extent=[0, 1, 0, 1],
             aspect="equal", interpolation="nearest", cmap="magma",
         )
-        self._fig.colorbar(self._im, ax=self._ax, label="intrinsic reward")
-        _draw_walls(self._ax, self._wall_x, self._hole_lo, self._hole_hi)
-        self._ax.set_xlim(0.0, 1.0)
-        self._ax.set_ylim(0.0, 1.0)
-        self._ax.set_xlabel("x")
-        self._ax.set_ylabel("y")
-        self._fig.suptitle(self._title)
+        self._fig.colorbar(self._rew_im, ax=self._rew_ax, label="intrinsic reward")
+        _draw_walls(self._rew_ax, self._wall_x, self._hole_lo, self._hole_hi)
+        self._rew_ax.set_xlim(0.0, 1.0)
+        self._rew_ax.set_ylim(0.0, 1.0)
+        self._rew_ax.set_xlabel("x")
+        self._rew_ax.set_ylabel("y")
+        self._rew_ax.set_title("RND intrinsic reward")
+
+        self._cnt_im = self._cnt_ax.imshow(
+            empty, origin="lower", extent=[0, 1, 0, 1],
+            aspect="equal", interpolation="nearest", cmap="Blues",
+        )
+        self._fig.colorbar(self._cnt_im, ax=self._cnt_ax, label="log(1 + visits)")
+        _draw_walls(self._cnt_ax, self._wall_x, self._hole_lo, self._hole_hi)
+        self._cnt_ax.set_xlim(0.0, 1.0)
+        self._cnt_ax.set_ylim(0.0, 1.0)
+        self._cnt_ax.set_xlabel("x")
+        self._cnt_ax.set_ylabel("y")
+        self._cnt_ax.set_title("State visitation count")
+
         self._fig.tight_layout()
         self._fig.show()
 
     @torch.no_grad()
     def _reward(self):
-        return self._rnd.get_intrinsic_rew(self._states).squeeze(-1)
+        return self._intrinsic.get_intrinsic_rew(self._states).squeeze(-1)
+
+    def _accumulate_counts(self):
+        pos = self._env.state.detach().cpu().numpy()  # (num_envs, 2)
+        res = self.REWARD_RES
+        edges = np.linspace(0.0, 1.0, res + 1)
+        counts, _, _ = np.histogram2d(pos[:, 0], pos[:, 1], bins=edges)
+        # histogram2d indexes [x_bin, y_bin]; imshow wants [y, x] -> transpose.
+        self._count_grid += counts.T
 
     def maybe_update(self):
+        self._accumulate_counts()
         self._step += 1
         if self._step % self._update_every == 0:
             self.update()
 
     def update(self):
         res = self.REWARD_RES
-        grid = self._reward().cpu().numpy().reshape(res, res)
-        self._im.set_data(grid)
-        vmin = float(grid.min())
-        vmax = float(grid.max())
+        rew_grid = self._reward().cpu().numpy().reshape(res, res)
+        self._rew_im.set_data(rew_grid)
+        vmin = float(rew_grid.min())
+        vmax = float(rew_grid.max())
         if vmax - vmin < 1e-9:
             vmax = vmin + 1e-9
-        self._im.set_clim(vmin=vmin, vmax=vmax)
+        self._rew_im.set_clim(vmin=vmin, vmax=vmax)
+
+        log_counts = np.log1p(self._count_grid)
+        self._cnt_im.set_data(log_counts)
+        self._cnt_im.set_clim(vmin=0.0, vmax=max(log_counts.max(), 1e-9))
+
         self._fig.canvas.draw_idle()
         self._fig.canvas.flush_events()
 
@@ -362,10 +401,10 @@ class WallsSACValueVisualiser(_WallsBaseValueVisualiser):
 
     def __init__(self, runner, env, update_every: int = 2, record: bool = False):
         self._sac = runner.runner
-        self._has_rnd = self._sac.rnd is not None
+        self._has_intrinsic = self._sac.intrinsic is not None
         # With RND there are three channels; without it only the extrinsic value.
         self._row_labels = (
-            ["extrinsic", "intrinsic", "combined"] if self._has_rnd else ["extrinsic"]
+            ["extrinsic", "intrinsic", "combined"] if self._has_intrinsic else ["extrinsic"]
         )
         super().__init__(env, update_every, record=record)
 
@@ -383,14 +422,14 @@ class WallsSACValueVisualiser(_WallsBaseValueVisualiser):
             act = dist.sample()
             q_input = sac._q_input(obs_n, act)
             ext += torch.minimum(sac.q1.network(q_input), sac.q2.network(q_input))
-            if self._has_rnd:
+            if self._has_intrinsic:
                 intr += sac.intrinsic_critic.network(q_input)
         ext /= self.NUM_ACTION_SAMPLES
-        if not self._has_rnd:
+        if not self._has_intrinsic:
             return [ext.squeeze(-1).cpu().numpy()]
-        # Scale by rnd_rew_weight so the row is the intrinsic critic's *actual*
+        # Scale by intrinsic_rew_weight so the row is the intrinsic critic's *actual*
         # contribution to the policy objective; then combined = extrinsic + intrinsic.
-        intr = sac.cfg.rnd_rew_weight * (intr / self.NUM_ACTION_SAMPLES)
+        intr = sac.cfg.intrinsic_rew_weight * (intr / self.NUM_ACTION_SAMPLES)
         combined = ext + intr
         return [
             ext.squeeze(-1).cpu().numpy(),

@@ -33,6 +33,7 @@ class GoalReachVecEnv:
         self.goal = torch.empty(size=(num_envs, dim), device=device)
         self.state = torch.empty(size=(num_envs, dim), device=device)
         self.ep_counters = torch.zeros(size=(num_envs,), device=device)
+        self.randomise_ep_counters()
 
         self._visualisers = []
 
