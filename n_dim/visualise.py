@@ -62,7 +62,7 @@ class PolicyVisualiser:
     QUIVER_RES = 21
     SNAPSHOT_NAME = "policy.npz"
 
-    def __init__(self, runner, env, update_every: int = 1, record: bool = False):
+    def __init__(self, runner, env, update_every: int = 10, record: bool = False):
         self._runner = runner
         self._env = env
         self._n = env.n
@@ -284,7 +284,7 @@ class SACValueVisualiser(_BaseValueVisualiser):
     _kind = "sac_value"
     SNAPSHOT_NAME = "sac_value.npz"
 
-    def __init__(self, runner, env, update_every: int = 2, record: bool = False):
+    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
         self._sac = runner.runner
         super().__init__(env, update_every, record=record)
 
@@ -310,7 +310,7 @@ class PPOValueVisualiser(_BaseValueVisualiser):
     _kind = "ppo_value"
     SNAPSHOT_NAME = "ppo_value.npz"
 
-    def __init__(self, runner, env, update_every: int = 2, record: bool = False):
+    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
         self._ppo = runner.runner
         super().__init__(env, update_every, record=record)
 
