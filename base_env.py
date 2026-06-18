@@ -1,8 +1,8 @@
 import torch
-from louis_rl.vec_env import SpaceInfo
+from louis_rl.vec_env import SpaceInfo, VecEnv
 
 
-class GoalReachVecEnv:
+class GoalReachVecEnv(VecEnv):
     """Shared skeleton for the simple goal-reaching vec envs.
 
     A point agent moves in the unit hypercube ``[0, 1] ** dim`` towards a goal,
