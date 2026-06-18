@@ -83,7 +83,7 @@ class _GridMixin:
 class WallsPolicyVisualiser(_GridMixin):
     QUIVER_RES = 21
 
-    def __init__(self, runner, env, update_every: int = 1, record: bool = False):
+    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
         self._runner = runner
         self._max_step_size = env.max_step_size
         self._update_every = update_every
@@ -174,7 +174,7 @@ class _WallsBaseValueVisualiser(_GridMixin):
     VALUE_RES = 50
     _title = "Value"
 
-    def __init__(self, env, update_every: int = 2, record: bool = False):
+    def __init__(self, env, update_every: int = 20, record: bool = False):
         self._update_every = update_every
         self._step = 0
         self._device = env.device
@@ -276,7 +276,7 @@ class WallsIntrinsicRewardVisualiser(_GridMixin):
     REWARD_RES = 80
     _title = "RND intrinsic reward — predictor error"
 
-    def __init__(self, runner, env, update_every: int = 2, record: bool = False):
+    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
         self._intrinsic = runner.runner.intrinsic
         if self._intrinsic is None:
             raise ValueError(
@@ -378,7 +378,7 @@ class WallsPPOIntrinsicValueVisualiser(_WallsBaseValueVisualiser):
 
     _title = "PPO intrinsic value — V_intr(s, g)"
 
-    def __init__(self, runner, env, update_every: int = 2, record: bool = False):
+    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
         self._ppo = runner.runner
         if self._ppo.intrinsic_V is None:
             raise ValueError(
@@ -399,7 +399,7 @@ class WallsSACValueVisualiser(_WallsBaseValueVisualiser):
     NUM_ACTION_SAMPLES = 16
     _title = "SAC value — extrinsic / intrinsic / combined (mean over sampled actions)"
 
-    def __init__(self, runner, env, update_every: int = 2, record: bool = False):
+    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
         self._sac = runner.runner
         self._has_intrinsic = self._sac.intrinsic is not None
         # With RND there are three channels; without it only the extrinsic value.
@@ -441,7 +441,7 @@ class WallsSACValueVisualiser(_WallsBaseValueVisualiser):
 class WallsPPOValueVisualiser(_WallsBaseValueVisualiser):
     _title = "PPO value — v(s, g)"
 
-    def __init__(self, runner, env, update_every: int = 2, record: bool = False):
+    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
         self._ppo = runner.runner
         self._row_labels = ["value"]
         super().__init__(env, update_every, record=record)
