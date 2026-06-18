@@ -1,5 +1,5 @@
-from louis_rl.sac import SACRunnerCfg
-from louis_rl.intrinsic import RNDCfg
+from louis_rl.algos.sac import SACRunnerCfg
+from louis_rl.implementations.intrinsic import RNDCfg
 from n_dim.agents.her_cfg import NDimHERCfg
 
 SAC_CFG = SACRunnerCfg(

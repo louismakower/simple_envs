@@ -8,7 +8,7 @@ import random
 import numpy as np
 import torch
 
-from louis_rl.algorithm import RLRunner
+from louis_rl.rl_runner import RLRunner
 from n_dim import agents as n_dim_agents
 from n_dim.env import NDimVecEnv
 from n_dim.env_cfg import NDimVecEnvCfg

@@ -1,5 +1,5 @@
-from louis_rl.ppo import PPORunnerCfg
-from louis_rl.intrinsic import RNDCfg
+from louis_rl.algos.ppo import PPORunnerCfg
+from louis_rl.implementations.intrinsic import RNDCfg
 
 PPO_CFG = PPORunnerCfg(
     experiment_name="ppo_nd",

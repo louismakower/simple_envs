@@ -5,7 +5,7 @@ import torch
 
 from base_env import reward_fn
 
-from louis_rl.her import HERCfg, build_hindsight_goals
+from louis_rl.implementations.her import HERCfg, build_hindsight_goals
 
 
 def replace_goal_obs(all_obs, goal_obs, policy_obs_dim):

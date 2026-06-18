@@ -1,12 +1,12 @@
-from louis_rl.sac import SACRunnerCfg
-from louis_rl.intrinsic import RNDCfg, CountsCfg
+from louis_rl.algos.sac import SACRunnerCfg
+from louis_rl.implementations.intrinsic import RNDCfg, CountsCfg
 from walls.agents.her_cfg import NDimHERCfg
 
 SAC_CFG = SACRunnerCfg(
     experiment_name="sac_walls",
 
     gamma=0.99,
-    alpha_init=0.2,
+    alpha_init=0.01,
     alpha_lr=3e-4,
     target_entropy="auto",
 
@@ -29,7 +29,7 @@ SAC_CFG = SACRunnerCfg(
     reward_norm_type="ema",
     reward_ema_param=0.999,
 
-    max_steps=8_000,
+    max_steps=3_000,
     steps_per_iter=1,
     num_train_updates=10,
     batch_size=1024,
