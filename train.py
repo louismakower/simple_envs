@@ -81,6 +81,37 @@ def build_visualisers(task, agent, runner, env, record):
     return []
 
 
+def apply_intrinsic_overrides(agent_cfg, agent, mode, agents_module):
+    """Override the agent's intrinsic-reward mode from --intrinsic.
+
+    PPO and SAC expose intrinsic differently: PPO has a single ``intrinsic``
+    field (None | a cfg), SAC has ``use_intrinsic`` + ``intrinsic_cfg``. We map
+    the flag onto whichever the algo uses, pulling the RND/Counts hyperparameters
+    from named constants (``<ALGO>_RND_CFG`` / ``<ALGO>_COUNTS_CFG``) on the
+    task's agents module. ``mode=None`` leaves the config untouched.
+    """
+    if mode is None:
+        return agent_cfg
+
+    prefix = "PPO" if agent == "ppo" else "SAC"
+    sub_cfg = None
+    if mode != "none":
+        attr = f"{prefix}_{mode.upper()}_CFG"
+        sub_cfg = getattr(agents_module, attr, None)
+        if sub_cfg is None:
+            raise ValueError(
+                f"--intrinsic {mode} requested but {agents_module.__name__} "
+                f"defines no {attr}"
+            )
+
+    if agent == "ppo":
+        return dataclasses.replace(agent_cfg, intrinsic=sub_cfg)
+    # sac
+    if mode == "none":
+        return dataclasses.replace(agent_cfg, use_intrinsic=False)
+    return dataclasses.replace(agent_cfg, use_intrinsic=True, intrinsic_cfg=sub_cfg)
+
+
 def apply_her_overrides(agent_cfg, args):
     if args.disable_her:
         return dataclasses.replace(agent_cfg, her_cfg=None)
@@ -116,6 +147,8 @@ def main():
     parser.add_argument("--her_mode", type=str, default=None, choices=["future", "final"])
     parser.add_argument("--her_k", type=int, default=None)
     parser.add_argument("--disable_her", action="store_true", default=False)
+    parser.add_argument("--intrinsic", type=str, default=None, choices=["none", "rnd", "counts"],
+                        help="Override the intrinsic-reward mode (default: use the agent config as written).")
     parser.add_argument("--run_name", type=str, default=None)
     parser.add_argument("--no_visualise", action="store_true", default=False)
     parser.add_argument("--record", action="store_true", default=False,
@@ -142,6 +175,8 @@ def main():
             agent_cfg = dataclasses.replace(agent_cfg, her_cfg=her_cfg)
 
         agent_cfg = apply_her_overrides(agent_cfg, args)
+
+    agent_cfg = apply_intrinsic_overrides(agent_cfg, args.agent, args.intrinsic, agents)
     print(agent_cfg)
 
     run_name = args.run_name or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

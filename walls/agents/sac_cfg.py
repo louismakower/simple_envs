@@ -2,11 +2,28 @@ from louis_rl.algos.sac import SACRunnerCfg
 from louis_rl.implementations.intrinsic import RNDCfg, CountsCfg
 from walls.agents.her_cfg import NDimHERCfg
 
+# Canonical intrinsic-reward configs for the walls task, selected per-run by
+# train.py's --intrinsic flag (none|counts|rnd). Kept here so the sweep and any
+# single run share one definition of the hyperparameters.
+SAC_COUNTS_CFG = CountsCfg(
+    limits=[(0, 1), (0, 1)],
+    resolutions=0.02,
+    use_frac=0.25,
+)
+SAC_RND_CFG = RNDCfg(
+    pred_dim=5,
+    target_hidden_layers=[16],
+    predictor_hidden_layers=[64, 64],
+    lr=3e-4,
+    obs_clip=5.0,
+    use_frac=0.25,
+)
+
 SAC_CFG = SACRunnerCfg(
     experiment_name="sac_walls",
 
     gamma=0.99,
-    alpha_init=0.01,
+    alpha_init=0.1,
     alpha_lr=3e-4,
     target_entropy="auto",
 
@@ -29,32 +46,24 @@ SAC_CFG = SACRunnerCfg(
     reward_norm_type="ema",
     reward_ema_param=0.999,
 
-    max_steps=3_000,
+    max_steps=15_000,
     steps_per_iter=1,
     num_train_updates=10,
     batch_size=1024,
 
     save_interval=600,
 
-    # her_cfg=NDimHERCfg(mode="future", k=4),
+    her_cfg=NDimHERCfg(mode="future", k=4),
 
-    use_intrinsic = True,
-    intrinsic_cfg=CountsCfg(
-        limits=[(0, 1), (0, 1)],
-        resolutions=0.02,
-    ),
-    # intrinsic_cfg=RNDCfg(
-    #     pred_dim=10,
-    #     target_hidden_layers=[16],
-    #     predictor_hidden_layers=[64, 16],
-    #     lr=3e-6,
-    #     obs_clip=5.0,
-    #     use_frac=0.25,
-    # ),
+    # default: no intrinsic reward; override per-run with --intrinsic. The
+    # intrinsic_cfg must still construct even when disabled, so point it at the
+    # counts config by default.
+    use_intrinsic=False,
+    intrinsic_cfg=SAC_COUNTS_CFG,
     intrinsic_critic_hidden_layers=[128],
     intrinsic_critic_lr=3e-4,
     intrinsic_rew_clip=0.0,
-    intrinsic_rew_weight=1.0,
+    intrinsic_rew_weight=1.0e-1,
     intrinsic_critic_tau=0.005,
     intrinsic_gamma=0.99,
     intrinsic_G_max=5.0,
