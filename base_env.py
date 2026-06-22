@@ -1,5 +1,6 @@
 import torch
 from louis_rl.vec_env import SpaceInfo, VecEnv
+from louis_rl.algos.go_explore import GoExploreVecEnv
 
 
 class GoalReachVecEnv(VecEnv):
@@ -21,6 +22,7 @@ class GoalReachVecEnv(VecEnv):
             max_ep_len: int,
             goal_radius: float,
             max_step_size: float,
+            goal_dynamics: bool,
             device="cpu",
     ):
         self.dim = dim
@@ -28,6 +30,7 @@ class GoalReachVecEnv(VecEnv):
         self.max_ep_len = max_ep_len
         self.goal_radius = goal_radius
         self.max_step_size = max_step_size
+        self.goal_dynamics = goal_dynamics
         self._device = device
 
         self.goal = torch.empty(size=(num_envs, dim), device=device)
@@ -131,10 +134,13 @@ class GoalReachVecEnv(VecEnv):
         return self.get_obs(self.state, self.goal), {}
 
     def compute_rew(self, state, goal):
-        return reward_fn(state, goal, self.goal_radius)
+        return reward_fn(state, goal, self.goal_radius, goal_dynamics=self.goal_dynamics)
 
     def compute_term(self, state):
-        return (_dist(state, self.goal) < self.goal_radius)
+        if self.goal_dynamics:
+            return (_dist(state, self.goal) < self.goal_radius)
+        else:
+            return torch.zeros(state.shape[0], device=self.device, dtype=torch.bool)
 
     def compute_timeout(self):
         return self.ep_counters >= self.max_ep_len
@@ -158,11 +164,27 @@ class GoalReachVecEnv(VecEnv):
     def _sample_starts(self, num):
         raise NotImplementedError
 
+class GoalReachGoExploreVecEnv(GoExploreVecEnv, GoalReachVecEnv):
+    def snapshot_state(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        return self.state[env_ids]
 
-def reward_fn(state, goal, goal_radius, n=None):
+    def restore_state(self, env_ids, snapshots):
+        if env_ids is None:
+            env_ids = slice(None)
+        self.state[env_ids] = snapshots
+        # full episode exploration on restore
+        self.ep_counters[env_ids] = 0
+
+    def terminal_snapshot(self, extras):
+        return extras["terminal_obs"]["policy"]
+
+
+def reward_fn(state, goal, goal_radius, goal_dynamics=True):
     reached = (_dist(state, goal) < goal_radius).float()
     neg_step = torch.full_like(reached, -0.01)
-    return reached + neg_step
+    return reached + neg_step if goal_dynamics else neg_step
 
 
 def _dist(pos1, pos2):

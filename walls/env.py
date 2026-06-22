@@ -1,12 +1,12 @@
 import torch
-from base_env import GoalReachVecEnv
+from base_env import GoalReachGoExploreVecEnv
 from walls.env_cfg import WallsVecEnvCfg
 
 # small offset so a blocked agent is placed just shy of the wall it hit
 _EPS = 1e-4
 
 
-class WallsVecEnv(GoalReachVecEnv):
+class WallsVecEnv(GoalReachGoExploreVecEnv):
     def __init__(
             self,
             cfg: WallsVecEnvCfg,
@@ -15,12 +15,14 @@ class WallsVecEnv(GoalReachVecEnv):
         self.n_walls = cfg.n_walls
         self.gap_width = cfg.gap_width
         self._seed = cfg.seed
+        self.cfg: WallsVecEnvCfg = cfg
         super().__init__(
             dim=2,
             num_envs=cfg.num_envs,
             max_ep_len=cfg.max_ep_len,
             goal_radius=cfg.goal_radius,
             max_step_size=cfg.max_step_size,
+            goal_dynamics=cfg.goal_dynamics,
             device=device,
         )
         # walls + holes are sampled once and frozen, shared across all envs
@@ -35,9 +37,10 @@ class WallsVecEnv(GoalReachVecEnv):
         return goals
 
     def _sample_starts(self, num):
-        # start pinned to the left edge (x=0), uniform vertically
+        # start pinned to the left edge (x=0)
         starts = torch.zeros(size=(num, 2), device=self._device)
-        starts[:, 1] = torch.rand(size=(num,), device=self._device)
+        if not self.cfg.fixed_start:
+            starts[:, 1] = torch.rand(size=(num,), device=self._device)
         return starts
 
     def _transition(self, state, scaled_action):

@@ -9,3 +9,5 @@ class WallsVecEnvCfg:
     goal_radius: float = 0.1
     max_step_size: float = 0.1
     seed: int = 42
+    goal_dynamics: bool = True
+    fixed_start: bool = False
