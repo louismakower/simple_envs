@@ -30,10 +30,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter, PillowWriter
 
-from louis_rl.algorithm import RLRunner
-from louis_rl.intrinsic import RNDCfg
-from louis_rl.ppo import PPORunnerCfg
-from louis_rl.sac import SACRunnerCfg
+from louis_rl.rl_runner import RLRunner
+from louis_rl.implementations.intrinsic import CountsCfg, IntrinsicCfg, RNDCfg
+from louis_rl.algos.ppo import PPORunnerCfg
+from louis_rl.algos.sac import SACRunnerCfg
 from walls.env import WallsVecEnv
 from walls.env_cfg import WallsVecEnvCfg
 from walls.visualise import _draw_walls
@@ -70,18 +70,26 @@ def load_cfgs(checkpoint: str):
     return data["agent"], data["env"]
 
 
-def _rebuild_rnd_cfg(data: dict) -> RNDCfg:
-    """Rebuild an RNDCfg from an asdict() dump, tolerating schema drift.
+def _rebuild_intrinsic_cfg(data: dict) -> IntrinsicCfg:
+    """Rebuild an IntrinsicCfg from an asdict() dump, tolerating schema drift.
 
-    Older checkpoints predate fields later added to RNDCfg, so a plain
-    ``RNDCfg(**data)`` raises on the missing arg. We keep the keys the current
-    RNDCfg still has and fill any gap with that field's default — or a neutral
-    placeholder for a since-added required field. This is safe because RND is
-    never queried under the deterministic policy, so its config only needs to
+    asdict() flattens the nested intrinsic cfg to a plain dict, but SACRunner
+    feeds it to ``IntrinsicModule.create`` which dispatches on the dataclass
+    ``.type`` attribute, so we must reconstruct the concrete dataclass. The
+    ``type`` discriminator picks RND vs Counts.
+
+    Older checkpoints predate fields later added to these cfgs, so a plain
+    ``Cls(**data)`` raises on the missing arg. We keep the keys the current
+    cfg still has and fill any gap with that field's default — or a neutral
+    placeholder for a since-added required field. The intrinsic module is never
+    queried under the deterministic policy, so its config only needs to
     construct.
     """
+    cls = {"rnd": RNDCfg, "counts": CountsCfg}.get(data.get("type"))
+    if cls is None:
+        raise SystemExit(f"Unknown intrinsic cfg type {data.get('type')!r} in cfg.json")
     kwargs = {}
-    for f in dataclasses.fields(RNDCfg):
+    for f in dataclasses.fields(cls):
         if f.name in data:
             kwargs[f.name] = data[f.name]
         elif f.default is not dataclasses.MISSING:
@@ -90,7 +98,7 @@ def _rebuild_rnd_cfg(data: dict) -> RNDCfg:
             kwargs[f.name] = f.default_factory()
         else:
             kwargs[f.name] = 0  # unused at play time
-    return RNDCfg(**kwargs)
+    return cls(**kwargs)
 
 
 def build_runner(agent_d: dict, env):
@@ -105,12 +113,17 @@ def build_runner(agent_d: dict, env):
     if algo == "sac":
         agent_d["her_cfg"] = None
         agent_d["replay_buffer_size"] = 1
-        # asdict() flattened the nested rnd_cfg to a plain dict; rebuild the
-        # dataclass since SACRunner constructs RND from it (even when disabled).
-        if isinstance(agent_d.get("rnd_cfg"), dict):
-            agent_d["rnd_cfg"] = _rebuild_rnd_cfg(agent_d["rnd_cfg"])
+        # asdict() flattened the nested intrinsic_cfg to a plain dict; rebuild
+        # the dataclass since SACRunner feeds it to IntrinsicModule.create,
+        # which dispatches on the dataclass .type attribute.
+        if isinstance(agent_d.get("intrinsic_cfg"), dict):
+            agent_d["intrinsic_cfg"] = _rebuild_intrinsic_cfg(agent_d["intrinsic_cfg"])
         agent_cfg = SACRunnerCfg(**agent_d)
     elif algo == "ppo":
+        # PPO stores the (optional) intrinsic cfg under `intrinsic`; rebuild the
+        # dataclass for the same reason as SAC. It may be None (no intrinsic).
+        if isinstance(agent_d.get("intrinsic"), dict):
+            agent_d["intrinsic"] = _rebuild_intrinsic_cfg(agent_d["intrinsic"])
         agent_cfg = PPORunnerCfg(**agent_d)
     else:
         raise SystemExit(f"Unknown algo_name {algo!r} in cfg.json")

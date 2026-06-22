@@ -50,8 +50,12 @@ def read_scalar(path, tag):
     event_mtime = max(os.path.getmtime(os.path.join(path, f)) for f in event_files) if event_files else 0
 
     if os.path.exists(cache) and os.path.getmtime(cache) >= event_mtime:
-        data = np.load(cache)
-        return data["steps"], data["values"]
+        try:
+            data = np.load(cache)
+            return data["steps"], data["values"]
+        except Exception:
+            # Truncated/corrupt cache (e.g. run interrupted mid-write); re-parse.
+            pass
 
     steps, values = [], []
     for fname in sorted(event_files):
