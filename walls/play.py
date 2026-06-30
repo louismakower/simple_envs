@@ -224,7 +224,9 @@ def run_rollout(runner, env, panel, fig, *, delay, max_episodes=None,
         obs, _rew, term, timeout, extras = env.step(action)
 
         if bool((term | timeout)[0].item()):
-            terminal = extras["terminal_obs"]["policy"][0].detach().cpu().numpy().copy()
+            # policy obs may carry extra channels past position (e.g. momentum's
+            # appended velocity); the trail only plots position, so keep dim dims.
+            terminal = extras["terminal_obs"]["policy"][0, :env.dim].detach().cpu().numpy().copy()
             traj.append(terminal)
             redraw(traj, episode, len(traj) - 1)
             if recording:

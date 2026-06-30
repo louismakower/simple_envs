@@ -15,12 +15,16 @@ from n_dim.env_cfg import NDimVecEnvCfg
 from walls import agents as walls_agents
 from walls.env import WallsVecEnv
 from walls.env_cfg import WallsVecEnvCfg
+from momentum.env import MomentumWallsVecEnv
+from momentum.env_cfg import MomentumVecEnvCfg
+from momentum import agents as momentum_agents
 
 
 # task name -> (env class, env cfg class, agents module)
 TASKS = {
     "n_dim": (NDimVecEnv, NDimVecEnvCfg, n_dim_agents),
     "walls": (WallsVecEnv, WallsVecEnvCfg, walls_agents),
+    "momentum": (MomentumWallsVecEnv, MomentumVecEnvCfg, momentum_agents)
 }
 
 
@@ -75,6 +79,26 @@ def build_visualisers(task, agent, runner, env, record):
             if getattr(runner.runner, "intrinsic", None) is not None:
                 visualisers.append(WallsIntrinsicRewardVisualiser(runner, env, record=record))
                 visualisers.append(WallsPPOIntrinsicValueVisualiser(runner, env, record=record))
+        return visualisers
+
+    if task == "momentum":
+        from momentum.visualise import (
+            MomentumPolicyVisualiser, MomentumSACValueVisualiser,
+            MomentumPPOValueVisualiser, MomentumBufferVisualiser,
+            MomentumIntrinsicRewardVisualiser, MomentumPPOIntrinsicValueVisualiser,
+        )
+        every = 200
+        visualisers = [MomentumPolicyVisualiser(runner, env, update_every=every, record=record)]
+        if agent == "sac":
+            visualisers.append(MomentumSACValueVisualiser(runner, env, update_every=every, record=record))
+            visualisers.append(MomentumBufferVisualiser(runner, env, update_every=every, record=record))
+            if getattr(runner.runner, "intrinsic", None) is not None:
+                visualisers.append(MomentumIntrinsicRewardVisualiser(runner, env, update_every=every, record=record))
+        else:
+            visualisers.append(MomentumPPOValueVisualiser(runner, env, update_every=every, record=record))
+            if getattr(runner.runner, "intrinsic", None) is not None:
+                visualisers.append(MomentumIntrinsicRewardVisualiser(runner, env, update_every=every, record=record))
+                visualisers.append(MomentumPPOIntrinsicValueVisualiser(runner, env, update_every=every, record=record))
         return visualisers
 
     print(f"[INFO] no visualisers for task '{task}'; training without them.")

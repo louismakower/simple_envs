@@ -79,6 +79,11 @@ class _GridMixin:
         g = torch.tensor([GOAL_X, gy], dtype=torch.float32, device=self._device)
         return g.expand(n, 2)
 
+    def _policy_obs(self, states):
+        """Policy-network input for grid positions. Identity by default; the
+        momentum env overrides this to append a velocity block."""
+        return states
+
 
 class WallsPolicyVisualiser(_GridMixin):
     QUIVER_RES = 21
@@ -135,7 +140,7 @@ class WallsPolicyVisualiser(_GridMixin):
 
     @torch.no_grad()
     def _action(self, goals):
-        obs = {"policy": self._states, "goal": {"desired_goal": goals}}
+        obs = {"policy": self._policy_obs(self._states), "goal": {"desired_goal": goals}}
         return self._runner.get_deterministic_action(obs)
 
     def maybe_update(self):
@@ -378,7 +383,7 @@ class WallsPPOIntrinsicValueVisualiser(_WallsBaseValueVisualiser):
 
     _title = "PPO intrinsic value — V_intr(s, g)"
 
-    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
+    def __init__(self, runner, env, update_every: int = 100, record: bool = False):
         self._ppo = runner.runner
         if self._ppo.intrinsic_V is None:
             raise ValueError(
@@ -390,7 +395,7 @@ class WallsPPOIntrinsicValueVisualiser(_WallsBaseValueVisualiser):
     @torch.no_grad()
     def _value_rows(self, states, goals):
         self._ppo.intrinsic_V.eval()
-        obs = {"policy": states, "goal": {"desired_goal": goals}}
+        obs = {"policy": self._policy_obs(states), "goal": {"desired_goal": goals}}
         v = self._ppo.intrinsic_V(self._ppo.add_goal_obs(obs)).squeeze(-1)
         return [v.cpu().numpy()]
 
@@ -412,7 +417,7 @@ class WallsSACValueVisualiser(_WallsBaseValueVisualiser):
     def _value_rows(self, states, goals):
         sac = self._sac
         sac._set_eval()
-        obs = {"policy": states, "goal": {"desired_goal": goals}}
+        obs = {"policy": self._policy_obs(states), "goal": {"desired_goal": goals}}
         obs_n = sac.obs_norm(sac.add_goal_obs(obs))
         dist = sac.policy.dist(obs_n)
         n = obs_n.shape[0]
@@ -450,7 +455,7 @@ class WallsPPOValueVisualiser(_WallsBaseValueVisualiser):
     def _value_rows(self, states, goals):
         ppo = self._ppo
         ppo.v.eval()
-        obs = {"policy": states, "goal": {"desired_goal": goals}}
+        obs = {"policy": self._policy_obs(states), "goal": {"desired_goal": goals}}
         v = ppo.v(ppo.add_goal_obs(obs)).squeeze(-1)
         return [v.cpu().numpy()]
 
