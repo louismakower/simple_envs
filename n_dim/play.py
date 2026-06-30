@@ -35,9 +35,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter, PillowWriter
 
-from louis_rl.algorithm import RLRunner
-from louis_rl.ppo import PPORunnerCfg
-from louis_rl.sac import SACRunnerCfg
+from louis_rl.rl_runner import RLRunner
+from louis_rl.algos.ppo import PPORunnerCfg
+from louis_rl.algos.sac import SACRunnerCfg
 from n_dim.env import NDimVecEnv
 from n_dim.env_cfg import NDimVecEnvCfg
 
