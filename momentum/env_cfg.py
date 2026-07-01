@@ -7,3 +7,4 @@ class MomentumVecEnvCfg(WallsVecEnvCfg):
     n_walls: int = 1
     max_step_size: float = 0.01
     max_ep_len: int = 1000
+    goal_dynamics: bool = False  # stable-exploration task: drop the goal, intrinsic reward only

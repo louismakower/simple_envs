@@ -47,9 +47,12 @@ class MomentumWallsVecEnv(WallsVecEnv):
         # obs becomes [position, velocity]
         space = super().observation_space
         space["policy"] = SpaceInfo(shape=(2 * self.dim,))
+        # rnd gets velocity too so intrinsic can filter based on it
+        space["rnd"] = SpaceInfo(shape=(2 * self.dim,))
         return space
 
     def get_obs(self, state, goal):
         obs = super().get_obs(state, goal)
         obs["policy"] = torch.cat([obs["policy"], self.last_action], dim=-1)
+        obs["rnd"] = torch.cat([obs["rnd"], self.last_action], dim=-1)
         return obs

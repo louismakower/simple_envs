@@ -7,10 +7,10 @@ block appended to each grid position. We visualise the **zero-velocity slice**
 figures laid out identically to the walls env. Position and velocity share the
 same width, so a `zeros_like` block suffices.
 
-The intrinsic-reward and buffer visualisers need no changes: the RND obs is
-position-only and the buffer obs is `[position, velocity, goal]`, so both already
-read position straight off. They are re-exported here so `train.py` can pull the
-whole momentum set from one module.
+The intrinsic obs is now `[position, velocity]`, so the intrinsic-reward visualiser
+feeds each grid position with zero velocity (the reward for stopping there). The
+buffer obs is `[position, velocity, goal]` and reads position straight off, so it
+is re-exported unchanged, alongside the whole momentum set for one import in train.py.
 """
 
 import torch
@@ -22,6 +22,7 @@ from walls.visualise import (
     WallsPPOIntrinsicValueVisualiser,
     WallsBufferVisualiser,
     WallsIntrinsicRewardVisualiser,
+    WallsStableCountsVisualiser,
 )
 
 
@@ -48,6 +49,19 @@ class MomentumPPOIntrinsicValueVisualiser(_ZeroVelMixin, WallsPPOIntrinsicValueV
     pass
 
 
-# reused unchanged — re-exported for a single import site in train.py
+# reused unchanged — re-exported for a single import site in train.py. The
+# stable-counts visualiser reads the intrinsic module's own grids (which are over
+# position only), so it needs no velocity handling and works as-is here.
 MomentumBufferVisualiser = WallsBufferVisualiser
-MomentumIntrinsicRewardVisualiser = WallsIntrinsicRewardVisualiser
+MomentumStableCountsVisualiser = WallsStableCountsVisualiser
+
+
+class MomentumIntrinsicRewardVisualiser(WallsIntrinsicRewardVisualiser):
+    """Append zero velocity to each grid position, so the map shows the reward for
+    coming to rest in that cell (bright = novel stable cell still to be claimed)."""
+
+    @torch.no_grad()
+    def _reward(self):
+        pad = self._intrinsic.obs_dim - self._states.shape[1]
+        obs = torch.cat([self._states, torch.zeros(self._states.shape[0], pad, device=self._states.device)], dim=-1)
+        return self._intrinsic.get_intrinsic_rew(obs).squeeze(-1)

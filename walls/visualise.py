@@ -373,6 +373,134 @@ class WallsIntrinsicRewardVisualiser(_GridMixin):
         pass
 
 
+class WallsStableCountsVisualiser:
+    """2x2 read-out of a StableCounts intrinsic module's internal per-cell grids.
+
+    Unlike WallsIntrinsicRewardVisualiser (which re-derives a reward map and
+    accumulates its own visitation histogram), this reads the module's own
+    tensors straight off `runner.runner.intrinsic`, so it works identically for
+    SAC and PPO and is always exactly in sync with what the agent is rewarded on.
+
+    Panels (all over the (x, y) position grid, walls overlaid):
+      - stable-visit counts: where the agent has learned to come to rest
+        (`counts`, low-velocity stops only), log scale.
+      - all-visit counts: everywhere it goes regardless of stability
+        (`visit_counts`), log scale. The gap vs. the stable map is the set of
+        cells it can traverse but not stop in.
+      - archive / best stability: per stably-reached cell, the lowest velocity
+        norm ever archived there (`best_metric`); unreached cells are blank.
+        This is the coverage that gets exported to stable_states.pt.
+      - stable fraction: stable visits / all visits per cell — 0 = pure
+        pass-through corridor, 1 = always comes to rest here.
+
+    Requires the intrinsic module to be a StableCounts (has `best_metric`).
+    Live-only: `record` is accepted for signature parity and ignored.
+    """
+
+    def __init__(self, runner, env, update_every: int = 20, record: bool = False):
+        self._intrinsic = runner.runner.intrinsic
+        if self._intrinsic is None or not hasattr(self._intrinsic, "best_metric"):
+            raise ValueError(
+                "WallsStableCountsVisualiser requires a StableCounts intrinsic module"
+            )
+        self._update_every = update_every
+        self._step = 0
+        self._wall_x = env.wall_x.cpu().numpy()
+        self._hole_lo = env.hole_lo.cpu().numpy()
+        self._hole_hi = env.hole_hi.cpu().numpy()
+
+        grid = self._intrinsic.grid
+        self._nx, self._ny = grid.shape  # grid is indexed [x, y]
+        self._threshold = self._intrinsic.stable_threshold
+        self._extent = [
+            grid.mins[0], grid.mins[0] + self._nx * grid.resolutions[0],
+            grid.mins[1], grid.mins[1] + self._ny * grid.resolutions[1],
+        ]
+        self._setup_figure()
+
+    def _panel(self, ax, cmap, label, title):
+        im = ax.imshow(
+            np.zeros((self._ny, self._nx)), origin="lower", extent=self._extent,
+            aspect="equal", interpolation="nearest", cmap=cmap,
+        )
+        self._fig.colorbar(im, ax=ax, label=label)
+        _draw_walls(ax, self._wall_x, self._hole_lo, self._hole_hi)
+        ax.set_xlim(self._extent[0], self._extent[1])
+        ax.set_ylim(self._extent[2], self._extent[3])
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_title(title)
+        return im
+
+    def _setup_figure(self):
+        plt.ion()
+        self._fig, axes = plt.subplots(2, 2, figsize=(13, 11), layout="constrained")
+        try:
+            self._fig.canvas.manager.set_window_title("Walls stable counts")
+        except Exception:
+            pass
+
+        # blank (NaN / unreached) cells shown as a dim grey so coverage reads clearly.
+        arch_cmap = plt.get_cmap("plasma_r").copy()
+        arch_cmap.set_bad("#2a2a2a")
+        frac_cmap = plt.get_cmap("viridis").copy()
+        frac_cmap.set_bad("#2a2a2a")
+
+        (ax_sc, ax_vc), (ax_arch, ax_frac) = axes
+        self._sc_im = self._panel(ax_sc, "Blues", "log(1 + stable visits)", "Stable-visit counts")
+        self._vc_im = self._panel(ax_vc, "Blues", "log(1 + visits)", "All-visit counts")
+        self._arch_im = self._panel(
+            ax_arch, arch_cmap, "best velocity norm", "Archive: best stability (blank = unreached)"
+        )
+        self._arch_im.set_clim(0.0, self._threshold)
+        self._frac_im = self._panel(ax_frac, frac_cmap, "stable / all visits", "Stable fraction")
+        self._frac_im.set_clim(0.0, 1.0)
+
+        self._fig.suptitle("Stable counts")
+        self._fig.show()
+
+    def maybe_update(self):
+        self._step += 1
+        if self._step % self._update_every == 0:
+            self.update()
+
+    @torch.no_grad()
+    def update(self):
+        intr = self._intrinsic
+        # counts / visit_counts start at 1 (Laplace prior for 1/sqrt(count)); the
+        # actual number of visits is count - 1. grids are indexed [x, y]; imshow
+        # wants [y, x] -> transpose.
+        counts = intr.counts.detach().cpu().numpy().astype(np.float64)
+        visits = intr.visit_counts.detach().cpu().numpy().astype(np.float64)
+        best = intr.best_metric.detach().cpu().numpy().reshape(self._nx, self._ny)
+
+        stable_visits = counts - 1.0
+        all_visits = visits - 1.0
+
+        sc = np.log1p(stable_visits).T
+        vc = np.log1p(all_visits).T
+        arch = np.where(np.isfinite(best), best, np.nan).T
+        with np.errstate(invalid="ignore", divide="ignore"):
+            frac = np.where(all_visits > 0, stable_visits / all_visits, np.nan).T
+
+        self._sc_im.set_data(sc)
+        self._sc_im.set_clim(0.0, max(sc.max(), 1e-9))
+        self._vc_im.set_data(vc)
+        self._vc_im.set_clim(0.0, max(vc.max(), 1e-9))
+        self._arch_im.set_data(arch)  # clim pinned to [0, threshold] at setup
+        self._frac_im.set_data(frac)  # clim pinned to [0, 1] at setup
+
+        n_stable = int(np.isfinite(best).sum())
+        coverage = n_stable / best.size
+        self._fig.suptitle(f"Stable counts — {n_stable} stable cells ({coverage:.1%} coverage)")
+
+        self._fig.canvas.draw_idle()
+        self._fig.canvas.flush_events()
+
+    def save(self, dir_path: str):
+        pass
+
+
 class WallsPPOIntrinsicValueVisualiser(_WallsBaseValueVisualiser):
     """(x, y) heatmaps of PPO's intrinsic value network (V_intr(s, g)).
 

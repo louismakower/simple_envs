@@ -86,19 +86,25 @@ def build_visualisers(task, agent, runner, env, record):
             MomentumPolicyVisualiser, MomentumSACValueVisualiser,
             MomentumPPOValueVisualiser, MomentumBufferVisualiser,
             MomentumIntrinsicRewardVisualiser, MomentumPPOIntrinsicValueVisualiser,
+            MomentumStableCountsVisualiser,
         )
-        every = 200
+        every = 20
+        intrinsic = getattr(runner.runner, "intrinsic", None)
         visualisers = [MomentumPolicyVisualiser(runner, env, update_every=every, record=record)]
         if agent == "sac":
             visualisers.append(MomentumSACValueVisualiser(runner, env, update_every=every, record=record))
             visualisers.append(MomentumBufferVisualiser(runner, env, update_every=every, record=record))
-            if getattr(runner.runner, "intrinsic", None) is not None:
+            if intrinsic is not None:
                 visualisers.append(MomentumIntrinsicRewardVisualiser(runner, env, update_every=every, record=record))
         else:
             visualisers.append(MomentumPPOValueVisualiser(runner, env, update_every=every, record=record))
-            if getattr(runner.runner, "intrinsic", None) is not None:
+            if intrinsic is not None:
                 visualisers.append(MomentumIntrinsicRewardVisualiser(runner, env, update_every=every, record=record))
                 visualisers.append(MomentumPPOIntrinsicValueVisualiser(runner, env, update_every=every, record=record))
+        # StableCounts (momentum's default intrinsic) keeps rich per-cell grids;
+        # surface them for whichever agent is running.
+        if intrinsic is not None and hasattr(intrinsic, "best_metric"):
+            visualisers.append(MomentumStableCountsVisualiser(runner, env, update_every=every, record=record))
         return visualisers
 
     print(f"[INFO] no visualisers for task '{task}'; training without them.")
@@ -236,6 +242,12 @@ def main():
             for v in env._visualisers:
                 v.save(snapshot_dir)
             print(f"[INFO] Saved visualiser snapshots to {snapshot_dir}")
+        # export the stable-state archive (start/goal distribution) if the run kept one
+        intr = getattr(runner.runner, "intrinsic", None)
+        if intr is not None and hasattr(intr, "save_stable_states"):
+            path = os.path.join(log_dir, "stable_states.pt")
+            intr.save_stable_states(path)
+            print(f"[INFO] Saved {intr.n_stable} stable states to {path}")
         writer = getattr(runner.runner, "writer", None)
         if writer is not None:
             writer.close()
